@@ -1,0 +1,80 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./safety-admin.db"
+}
+
+model Worker {
+  id                Int      @id @default(autoincrement())
+  name              String
+  birthDate         DateTime @map("birth_date")
+  equipmentId       String   @unique @map("equipment_id")
+  workField         String   @map("work_field")
+  affiliation       String
+  healthPrecautions String?  @map("health_precautions")
+  mobilePhone       String?  @map("mobile_phone")
+  emergencyContact  String?  @map("emergency_contact")
+  profileImage      String?  @map("profile_image")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("workers")
+}
+
+model Administrator {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  role         String   @default("admin")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("administrators")
+}
+
+model Sensor {
+  id        Int      @id @default(autoincrement())
+  sensorId  String   @unique @map("sensor_id")
+  name      String
+  type      String
+  location  String
+  status    String   @default("active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("sensors")
+}
+
+model CCTV {
+  id        Int      @id @default(autoincrement())
+  cameraId  String   @unique @map("camera_id")
+  name      String
+  location  String
+  ipAddress String   @map("ip_address")
+  status    String   @default("active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("cctv")
+}
+
+model MonitoringLog {
+  id        Int      @id @default(autoincrement())
+  type      String
+  sourceId  String   @map("source_id")
+  message   String
+  severity  String   @default("info")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("monitoring_logs")
+}
