@@ -34,7 +34,15 @@
 - IP 주소 관리
 - 카메라 상태 모니터링
 
-### 5. 모니터링 로그
+### 5. BLE Beacon 근접 알림 시스템
+- BLE Beacon 등록 및 관리
+- Gateway 등록 및 관리
+- RSSI 기반 실시간 거리 계산
+- 5m 이내 근접 시 자동 알림
+- MQTT를 통한 실시간 데이터 수신
+- AoA (Angle of Arrival) 지원
+
+### 6. 모니터링 로그
 - 시스템 활동 로그
 - 알림 및 경고 기록
 - 로그 필터링 및 검색
@@ -70,6 +78,11 @@ NEXT_PUBLIC_APP_VERSION=1.0.0
 # Security
 JWT_SECRET=your_jwt_secret_key_here
 SESSION_SECRET=your_session_secret_here
+
+# MQTT Broker Configuration
+MQTT_BROKER_URL=mqtt://localhost:1883
+MQTT_USERNAME=
+MQTT_PASSWORD=
 ```
 
 ### 4. 데이터베이스 설정
@@ -232,6 +245,24 @@ model MonitoringLog {
 - `PUT /api/workers/[id]` - 작업자 수정
 - `DELETE /api/workers/[id]` - 작업자 삭제
 
+### BLE Beacon 관리
+- `GET /api/beacons` - Beacon 목록 조회
+- `POST /api/beacons` - Beacon 추가
+- `PUT /api/beacons/[id]` - Beacon 수정
+- `DELETE /api/beacons/[id]` - Beacon 삭제
+
+### Gateway 관리
+- `GET /api/gateways` - Gateway 목록 조회
+- `POST /api/gateways` - Gateway 추가
+- `PUT /api/gateways/[id]` - Gateway 수정
+- `DELETE /api/gateways/[id]` - Gateway 삭제
+
+### 근접 알림
+- `GET /api/proximity-alerts` - 근접 알림 목록 조회
+- `GET /api/dashboard-stats` - 대시보드 통계 조회
+- `GET /api/mqtt` - MQTT 연결 상태 확인
+- `POST /api/mqtt` - MQTT 연결/메시지 발송
+
 ## 🎨 UI/UX 특징
 
 - **다크 블루 사이드바**: 직관적인 네비게이션
@@ -271,6 +302,127 @@ npx prisma migrate deploy
 npx prisma migrate reset
 ```
 
+## 📡 BLE Beacon 근접 알림 시스템
+
+### 시스템 아키텍처
+```
+[BLE Beacon] ←→ [Gateway] ←→ [MQTT Broker] ←→ [Safety Admin Server]
+```
+
+### 주요 구성 요소
+
+#### 1. BLE Beacon
+- **역할**: 작업자나 장비에 부착되어 신호를 송신
+- **특징**: UUID, Major, Minor 값으로 고유 식별
+- **전송 주기**: 1초마다 신호 송신 (설정 가능)
+- **전송 전력**: -59dBm (1m 기준, 설정 가능)
+
+#### 2. Gateway
+- **역할**: BLE 신호를 수신하여 MQTT로 전송
+- **기능**: RSSI 측정, AoA 각도 측정 (선택적)
+- **통신**: WiFi/Ethernet을 통한 MQTT 연결
+- **토픽**: `safety/beacon/{gateway_name}`
+
+#### 3. MQTT Broker
+- **역할**: Gateway와 서버 간 메시지 중계
+- **프로토콜**: MQTT 3.1.1/5.0
+- **QoS**: 1 (최소 한 번 전달 보장)
+
+#### 4. Safety Admin Server
+- **역할**: MQTT 메시지 수신 및 거리 계산
+- **기능**: RSSI 기반 거리 계산, 근접 알림 생성
+- **알림**: 5m 이내 진입 시 자동 알림
+
+### 거리 계산 알고리즘
+
+#### RSSI 기반 거리 계산
+```typescript
+// Path Loss Model 사용
+distance = 10^((txPower - rssi) / (10 * n))
+// n: 경로 손실 지수 (실내: 2.0)
+```
+
+#### AoA (Angle of Arrival) 지원
+- 각도 정보를 이용한 거리 보정
+- 다중 안테나를 통한 방향 측정
+- 더 정확한 위치 추정 가능
+
+### MQTT 메시지 형식
+```json
+{
+  "beaconId": "BEACON_AABBCCDDEEFF",
+  "gatewayId": "GW_001",
+  "rssi": -65,
+  "timestamp": 1694000000000,
+  "uuid": "12345678-1234-1234-1234-123456789abc",
+  "major": 1,
+  "minor": 1,
+  "angle": 45.5  // AoA 각도 (선택적)
+}
+```
+
+### 근접 알림 로직
+1. **거리 계산**: RSSI 값을 이용한 실시간 거리 계산
+2. **임계값 비교**: 설정된 임계값(기본 5m)과 비교
+3. **알림 생성**: 임계값 이하 시 근접 알림 생성
+4. **위험도 분류**: 
+   - 안전: 5m 초과
+   - 주의: 2m ~ 5m
+   - 위험: 2m 이하
+
+### 설정 및 배포
+
+#### 1. MQTT Broker 설정
+```bash
+# Mosquitto MQTT Broker 설치 (Ubuntu)
+sudo apt-get install mosquitto mosquitto-clients
+
+# Broker 시작
+sudo systemctl start mosquitto
+sudo systemctl enable mosquitto
+```
+
+#### 2. Gateway 설정
+- WiFi 연결 정보 설정
+- MQTT Broker 주소 설정
+- Beacon 스캔 주기 설정 (기본 1초)
+
+#### 3. Beacon 배치
+- 작업자 안전모에 부착
+- 장비에 부착
+- 고정 위치에 설치
+
+## Gateway를 등록한 후 MQTT 클라이언트를 다시 초기화해야 합니다:
+## 개발자 도구(F12) Console에서 다음 명령을 실행하세요
+## MQTT 클라이언트 초기화
+fetch('/api/mqtt', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ action: 'connect' })
+}).then(r => r.json()).then(console.log);
+
+## MQTT 연결 상태 확인
+fetch('/api/mqtt').then(r => r.json()).then(console.log);
+
+
+## 1. MQTT 연결 상태 확인
+fetch('/api/mqtt').then(r => r.json()).then(console.log);
+
+## 2. 등록된 Gateway 목록 확인
+fetch('/api/gateways').then(r => r.json()).then(console.log);
+
+## 3. 등록된 Beacon 목록 확인
+fetch('/api/beacons').then(r => r.json()).then(console.log);
+
+## 4. 근접 알림 목록 확인
+fetch('/api/proximity-alerts').then(r => r.json()).then(console.log);
+
+## 5. 대시보드 통계 확인
+fetch('/api/dashboard-stats').then(r => r.json()).then(console.log);
+
+## 모스키토 모니터링
+ & "C:\Program Files\mosquitto\mosquitto.exe" -c mosquitto-custom.conf -v
+
 ## 🔮 향후 계획
 
 1. **PostgreSQL 마이그레이션**: 프로덕션 환경을 위한 데이터베이스 변경
@@ -279,6 +431,8 @@ npx prisma migrate reset
 4. **대시보드**: 통계 및 차트 추가
 5. **모바일 앱**: React Native 기반 모바일 앱 개발
 6. **라우팅 시스템**: Next.js App Router를 활용한 페이지 라우팅
+7. **BLE Mesh 네트워크**: 다중 Gateway 지원
+8. **머신러닝 기반 거리 정확도 향상**: 노이즈 필터링 및 예측 모델
 
 ## 🗄️ PostgreSQL 마이그레이션
 

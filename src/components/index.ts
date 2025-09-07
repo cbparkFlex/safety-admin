@@ -5,3 +5,7 @@ export { default as AdministratorManagement } from './AdministratorManagement';
 export { default as SensorManagement } from './SensorManagement';
 export { default as Dashboard } from './Dashboard';
 export { default as LayoutWrapper } from './LayoutWrapper';
+export { default as BeaconManagement } from './BeaconManagement';
+export { default as GatewayManagement } from './GatewayManagement';
+export { default as ProximityDashboard } from './ProximityDashboard';
+export { default as GatewayDetailView } from './GatewayDetailView';

@@ -27,6 +27,9 @@ model Worker {
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
+  // Relations
+  proximityAlerts   ProximityAlert[]
+
   @@map("workers")
 }
 
@@ -76,5 +79,102 @@ model MonitoringLog {
   severity  String   @default("info")
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@index([createdAt])
+  @@index([severity])
+  @@index([type])
   @@map("monitoring_logs")
+}
+
+model Beacon {
+  id          Int      @id @default(autoincrement())
+  beaconId    String   @unique @map("beacon_id")
+  name        String
+  macAddress  String   @map("mac_address")
+  uuid        String
+  major       Int
+  minor       Int
+  txPower     Int      @map("tx_power")
+  location    String?
+  status      String   @default("active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  proximityAlerts ProximityAlert[]
+  rssiCalibrations RssiCalibration[]
+
+  @@map("beacons")
+}
+
+model Gateway {
+  id          Int      @id @default(autoincrement())
+  gatewayId   String   @unique @map("gateway_id")
+  name        String
+  location    String
+  ipAddress   String   @map("ip_address")
+  mqttTopic   String   @map("mqtt_topic")
+  status      String   @default("active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  proximityAlerts ProximityAlert[]
+  rssiCalibrations RssiCalibration[]
+
+  @@map("gateways")
+}
+
+model ProximityAlert {
+  id          Int      @id @default(autoincrement())
+  beaconId    String   @map("beacon_id")
+  gatewayId   String   @map("gateway_id")
+  workerId    Int?     @map("worker_id")
+  rssi        Int
+  distance    Float
+  threshold   Float    @default(5.0) // 5m 기본값
+  isAlert     Boolean  @default(false) @map("is_alert")
+  alertTime   DateTime? @map("alert_time")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  beacon      Beacon   @relation(fields: [beaconId], references: [beaconId])
+  gateway     Gateway  @relation(fields: [gatewayId], references: [gatewayId])
+  worker      Worker?  @relation(fields: [workerId], references: [id])
+
+  @@index([createdAt])
+  @@index([isAlert])
+  @@index([beaconId, gatewayId])
+  @@map("proximity_alerts")
+}
+
+model RssiCalibration {
+  id        Int      @id @default(autoincrement())
+  beaconId  String   @map("beacon_id")
+  gatewayId String   @map("gateway_id")
+  distance  Float
+  rssi      Int
+  samples   Int      @default(1)
+  timestamp DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  beacon    Beacon   @relation(fields: [beaconId], references: [beaconId])
+  gateway   Gateway  @relation(fields: [gatewayId], references: [gatewayId])
+
+  @@unique([beaconId, gatewayId, distance])
+  @@map("rssi_calibration")
+}
+
+model LogRetentionPolicy {
+  id          Int      @id @default(autoincrement())
+  logType     String   @map("log_type") // "monitoring", "proximity", "system"
+  severity    String   @default("all") // "error", "warning", "info", "debug", "all"
+  retentionDays Int    @map("retention_days") // 보존 기간 (일)
+  isActive    Boolean  @default(true) @map("is_active")
+  lastCleanup DateTime? @map("last_cleanup")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([logType, severity])
+  @@map("log_retention_policies")
 }

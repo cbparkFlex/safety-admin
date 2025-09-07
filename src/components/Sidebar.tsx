@@ -1,6 +1,6 @@
 'use client';
 
-import { Users, UserCheck, Wifi, Video, Monitor } from 'lucide-react';
+import { Users, UserCheck, Wifi, Video, Monitor, AlertTriangle, Router, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -43,9 +43,27 @@ export default function Sidebar({ activeItem }: SidebarProps) {
       href: '/cctv',
     },
     {
+      id: 'proximity',
+      label: '근접 알림',
+      icon: AlertTriangle,
+      href: '/proximity',
+    },
+    {
+      id: 'beacons',
+      label: 'BLE Beacon 관리',
+      icon: Wifi,
+      href: '/beacons',
+    },
+    {
+      id: 'gateways',
+      label: 'Gateway 관리',
+      icon: Router,
+      href: '/gateways',
+    },
+    {
       id: 'logs',
-      label: '모니터링 로그',
-      icon: Monitor,
+      label: '로그 관리',
+      icon: FileText,
       href: '/logs',
     },
   ];
@@ -56,6 +74,9 @@ export default function Sidebar({ activeItem }: SidebarProps) {
     if (pathname.startsWith('/administrators')) return 'administrators';
     if (pathname.startsWith('/sensors')) return 'sensors';
     if (pathname.startsWith('/cctv')) return 'cctv';
+    if (pathname.startsWith('/proximity')) return 'proximity';
+    if (pathname.startsWith('/beacons')) return 'beacons';
+    if (pathname.startsWith('/gateways')) return 'gateways';
     if (pathname.startsWith('/logs')) return 'logs';
     return activeItem || 'dashboard';
   };
