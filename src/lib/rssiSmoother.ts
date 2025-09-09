@@ -141,7 +141,7 @@ export class RSSISmoother {
   }
 
   /**
-   * 스무딩된 값 계산 (가중 이동 평균)
+   * 스무딩된 값 계산 (RSSI만 스무딩, 거리는 보정된 값 사용)
    */
   private calculateSmoothedValue(beaconId: string): { rssi: number; distance: number } {
     const history = this.history[beaconId];
@@ -152,10 +152,9 @@ export class RSSISmoother {
       return { rssi: latest.rssi, distance: latest.distance };
     }
 
-    // 가중치 계산 (최신 값일수록 높은 가중치)
+    // RSSI만 가중 이동 평균으로 스무딩
     let totalWeight = 0;
     let weightedRSSI = 0;
-    let weightedDistance = 0;
     
     const now = Date.now();
     
@@ -166,12 +165,14 @@ export class RSSISmoother {
       
       totalWeight += weight;
       weightedRSSI += entry.rssi * weight;
-      weightedDistance += entry.distance * weight;
     }
+    
+    // 거리는 최신 보정된 값 사용 (스무딩하지 않음)
+    const latestDistance = history[history.length - 1].distance;
     
     return {
       rssi: Math.round(weightedRSSI / totalWeight),
-      distance: weightedDistance / totalWeight
+      distance: latestDistance // 보정된 거리 그대로 사용
     };
   }
 

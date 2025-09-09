@@ -14,6 +14,9 @@ const MQTT_PASSWORD = process.env.MQTT_PASSWORD || '';
 
 let mqttClient: mqtt.MqttClient | null = null;
 
+// mqttClient export
+export { mqttClient };
+
 export interface BeaconMessage {
   beaconId: string;
   gatewayId: string;

@@ -44,14 +44,18 @@ export async function GET(request: NextRequest) {
 
 export async function DELETE() {
   try {
-    // 모든 근접 알림 데이터 삭제
+    // 모든 근접 알림 데이터 삭제 및 autoincrement 초기화
     const result = await prisma.proximityAlert.deleteMany({});
     
-    console.log(`근접 알림 데이터 삭제 완료: ${result.count}개 레코드 삭제됨`);
+    // SQLite autoincrement 초기화
+    await prisma.$executeRaw`DELETE FROM sqlite_sequence WHERE name='proximity_alerts'`;
+    
+    console.log(`근접 알림 데이터 TRUNCATE 완료: ${result.count}개 레코드 삭제됨, autoincrement 초기화됨`);
     
     return NextResponse.json({
-      message: "모든 근접 알림 데이터가 삭제되었습니다.",
-      deletedCount: result.count
+      message: "모든 근접 알림 데이터가 삭제되고 autoincrement가 초기화되었습니다.",
+      deletedCount: result.count,
+      autoincrementReset: true
     });
   } catch (error) {
     console.error("근접 알림 데이터 삭제 실패:", error);

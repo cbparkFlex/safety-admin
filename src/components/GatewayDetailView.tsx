@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowLeft, MapPin, Wifi, Activity, Calendar, BarChart3, Target, RefreshCw } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ArrowLeft, MapPin, Wifi, Activity, Calendar, BarChart3, Target, RefreshCw, Edit2, Save, X, Plus, Radio } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface GatewayDetailViewProps {
@@ -36,13 +36,173 @@ export default function GatewayDetailView({ data }: GatewayDetailViewProps) {
   const router = useRouter();
   const [selectedBeacon, setSelectedBeacon] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [editingMeasurement, setEditingMeasurement] = useState<{id: number, rssi: number} | null>(null);
+  const [editRssiValue, setEditRssiValue] = useState<string>("");
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newDistance, setNewDistance] = useState<string>("");
+  const [newRssi, setNewRssi] = useState<string>("");
+  const [isAdding, setIsAdding] = useState(false);
+  const [realtimeRSSI, setRealtimeRSSI] = useState<{[key: string]: {rssi: number | null, timestamp: Date | null}}>({});
 
   const { gateway, beaconGroups } = data;
+
+  // 실시간 RSSI 데이터 가져오기
+  const fetchRealtimeRSSI = async () => {
+    try {
+      const response = await fetch(`/api/gateway-beacon-status`);
+      if (response.ok) {
+        const result = await response.json();
+        const gatewayData = result.data.find((g: any) => g.gatewayId === gateway.gatewayId);
+        
+        if (gatewayData) {
+          const rssiData: {[key: string]: {rssi: number | null, timestamp: Date | null}} = {};
+          gatewayData.beacons.forEach((beacon: any) => {
+            rssiData[beacon.beaconId] = {
+              rssi: beacon.currentRSSI,
+              timestamp: beacon.lastUpdate ? new Date(beacon.lastUpdate) : null
+            };
+          });
+          setRealtimeRSSI(rssiData);
+        }
+      }
+    } catch (error) {
+      console.error("실시간 RSSI 데이터 가져오기 실패:", error);
+    }
+  };
+
+  // 컴포넌트 마운트 시 및 선택된 beacon 변경 시 실시간 데이터 가져오기
+  useEffect(() => {
+    fetchRealtimeRSSI();
+    
+    // 3초마다 실시간 데이터 업데이트
+    const interval = setInterval(fetchRealtimeRSSI, 3000);
+    
+    return () => clearInterval(interval);
+  }, [selectedBeacon, gateway.gatewayId]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
     router.refresh();
     setTimeout(() => setRefreshing(false), 1000);
+  };
+
+  const handleEditRssi = (measurement: any) => {
+    setEditingMeasurement({ id: measurement.id, rssi: measurement.rssi });
+    setEditRssiValue(measurement.rssi.toString());
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMeasurement(null);
+    setEditRssiValue("");
+  };
+
+  const handleSaveRssi = async () => {
+    if (!editingMeasurement || !selectedBeacon) return;
+
+    const newRssi = parseInt(editRssiValue);
+    if (isNaN(newRssi) || newRssi > 0 || newRssi < -100) {
+      alert("RSSI 값은 -100 ~ 0 사이의 정수여야 합니다.");
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const selectedBeaconData = beaconGroups.find(bg => bg.beacon.beaconId === selectedBeacon);
+      if (!selectedBeaconData) return;
+
+      const response = await fetch("/api/rssi-calibration/update", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          beaconId: selectedBeaconData.beacon.beaconId,
+          gatewayId: gateway.gatewayId,
+          distance: selectedBeaconData.measurements.find(m => m.id === editingMeasurement.id)?.distance,
+          newRssi: newRssi
+        })
+      });
+
+      if (response.ok) {
+        alert("RSSI 값이 성공적으로 수정되었습니다.");
+        handleCancelEdit();
+        router.refresh(); // 데이터 새로고침
+      } else {
+        const error = await response.json();
+        alert(`수정 실패: ${error.error || "알 수 없는 오류"}`);
+      }
+    } catch (error) {
+      console.error("RSSI 수정 실패:", error);
+      alert("RSSI 수정 중 오류가 발생했습니다.");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleAddMeasurement = () => {
+    setShowAddModal(true);
+    setNewDistance("");
+    setNewRssi("");
+  };
+
+  const handleCancelAdd = () => {
+    setShowAddModal(false);
+    setNewDistance("");
+    setNewRssi("");
+  };
+
+  const handleSaveNewMeasurement = async () => {
+    if (!selectedBeacon) return;
+
+    const distance = parseFloat(newDistance);
+    const rssi = parseInt(newRssi);
+
+    if (isNaN(distance) || distance <= 0 || distance > 100) {
+      alert("거리는 0.1 ~ 100 사이의 숫자여야 합니다.");
+      return;
+    }
+
+    if (isNaN(rssi) || rssi > 0 || rssi < -100) {
+      alert("RSSI 값은 -100 ~ 0 사이의 정수여야 합니다.");
+      return;
+    }
+
+    setIsAdding(true);
+    try {
+      const selectedBeaconData = beaconGroups.find(bg => bg.beacon.beaconId === selectedBeacon);
+      if (!selectedBeaconData) return;
+
+      // 기존 거리가 있는지 확인
+      const existingMeasurement = selectedBeaconData.measurements.find(m => m.distance === distance);
+      if (existingMeasurement) {
+        alert("해당 거리의 측정 데이터가 이미 존재합니다. 수정 기능을 사용하세요.");
+        return;
+      }
+
+      const response = await fetch("/api/rssi-calibration/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          beaconId: selectedBeaconData.beacon.beaconId,
+          gatewayId: gateway.gatewayId,
+          distance: distance,
+          rssi: rssi
+        })
+      });
+
+      if (response.ok) {
+        alert("새로운 측정 데이터가 성공적으로 추가되었습니다.");
+        handleCancelAdd();
+        router.refresh(); // 데이터 새로고침
+      } else {
+        const error = await response.json();
+        alert(`추가 실패: ${error.error || "알 수 없는 오류"}`);
+      }
+    } catch (error) {
+      console.error("측정 데이터 추가 실패:", error);
+      alert("측정 데이터 추가 중 오류가 발생했습니다.");
+    } finally {
+      setIsAdding(false);
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -196,13 +356,43 @@ export default function GatewayDetailView({ data }: GatewayDetailViewProps) {
             {selectedBeaconData ? (
               <div className="bg-white rounded-lg shadow-sm border">
                 <div className="p-4 border-b">
-                  <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5" />
-                    {selectedBeaconData.beacon.name} 측정 데이터
-                  </h2>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Beacon ID: {selectedBeaconData.beacon.beaconId} | MAC: {selectedBeaconData.beacon.mac}
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                        <BarChart3 className="w-5 h-5" />
+                        {selectedBeaconData.beacon.name} 측정 데이터
+                      </h2>
+                      <div className="flex items-center gap-4 mt-1">
+                        <p className="text-sm text-gray-500">
+                          Beacon ID: {selectedBeaconData.beacon.beaconId}
+                        </p>
+                        {realtimeRSSI[selectedBeaconData.beacon.beaconId] && (
+                          <div className="flex items-center gap-2 px-2 py-1 bg-green-50 rounded-lg">
+                            <Radio className="w-3 h-3 text-green-600" />
+                            <span className="text-xs font-medium text-green-700">
+                              실시간: {realtimeRSSI[selectedBeaconData.beacon.beaconId].rssi ? 
+                                `${realtimeRSSI[selectedBeaconData.beacon.beaconId].rssi}dBm` : 
+                                '데이터 없음'
+                              }
+                            </span>
+                            {realtimeRSSI[selectedBeaconData.beacon.beaconId].timestamp && (
+                              <span className="text-xs text-green-600">
+                                ({Math.round((Date.now() - realtimeRSSI[selectedBeaconData.beacon.beaconId].timestamp!.getTime()) / 1000)}초 전)
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleAddMeasurement}
+                      className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                      title="새로운 측정 데이터 추가"
+                    >
+                      <Plus className="w-4 h-4" />
+                      추가
+                    </button>
+                  </div>
                 </div>
                 <div className="p-4">
                   {selectedBeaconData.measurements.length === 0 ? (
@@ -226,6 +416,7 @@ export default function GatewayDetailView({ data }: GatewayDetailViewProps) {
                             <th className="text-left py-3 px-4 font-medium text-gray-700">품질</th>
                             <th className="text-left py-3 px-4 font-medium text-gray-700">샘플 수</th>
                             <th className="text-left py-3 px-4 font-medium text-gray-700">측정 일시</th>
+                            <th className="text-left py-3 px-4 font-medium text-gray-700">수정</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -237,9 +428,25 @@ export default function GatewayDetailView({ data }: GatewayDetailViewProps) {
                                   <span className="font-medium text-gray-900">{measurement.distance}m</span>
                                 </td>
                                 <td className="py-3 px-4">
-                                  <span className="font-mono font-medium text-gray-900">
-                                    {measurement.rssi}dBm
-                                  </span>
+                                  {editingMeasurement?.id === measurement.id ? (
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="number"
+                                        value={editRssiValue}
+                                        onChange={(e) => setEditRssiValue(e.target.value)}
+                                        className="w-20 px-2 py-1 border border-gray-300 rounded text-sm font-mono"
+                                        min="-100"
+                                        max="0"
+                                        step="1"
+                                        disabled={isUpdating}
+                                      />
+                                      <span className="text-sm text-gray-500">dBm</span>
+                                    </div>
+                                  ) : (
+                                    <span className="font-mono font-medium text-gray-900">
+                                      {measurement.rssi}dBm
+                                    </span>
+                                  )}
                                 </td>
                                 <td className="py-3 px-4">
                                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${quality.bg} ${quality.color}`}>
@@ -254,6 +461,36 @@ export default function GatewayDetailView({ data }: GatewayDetailViewProps) {
                                     <Calendar className="w-4 h-4" />
                                     {formatDate(measurement.timestamp)}
                                   </div>
+                                </td>
+                                <td className="py-3 px-4">
+                                  {editingMeasurement?.id === measurement.id ? (
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        onClick={handleSaveRssi}
+                                        disabled={isUpdating}
+                                        className="p-1 text-green-600 hover:text-green-700 disabled:opacity-50"
+                                        title="저장"
+                                      >
+                                        <Save className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        onClick={handleCancelEdit}
+                                        disabled={isUpdating}
+                                        className="p-1 text-red-600 hover:text-red-700 disabled:opacity-50"
+                                        title="취소"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleEditRssi(measurement)}
+                                      className="p-1 text-blue-600 hover:text-blue-700"
+                                      title="RSSI 값 수정"
+                                    >
+                                      <Edit2 className="w-4 h-4" />
+                                    </button>
+                                  )}
                                 </td>
                               </tr>
                             );
@@ -281,6 +518,90 @@ export default function GatewayDetailView({ data }: GatewayDetailViewProps) {
           </div>
         </div>
       </div>
+
+      {/* 새로운 측정 데이터 추가 모달 */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">새로운 측정 데이터 추가</h3>
+                <button
+                  onClick={handleCancelAdd}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    거리 (미터)
+                  </label>
+                  <input
+                    type="number"
+                    value={newDistance}
+                    onChange={(e) => setNewDistance(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="예: 1.5"
+                    min="0.1"
+                    max="100"
+                    step="0.1"
+                    disabled={isAdding}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">0.1 ~ 100 사이의 숫자를 입력하세요</p>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    RSSI (dBm)
+                  </label>
+                  <input
+                    type="number"
+                    value={newRssi}
+                    onChange={(e) => setNewRssi(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="예: -45"
+                    min="-100"
+                    max="0"
+                    step="1"
+                    disabled={isAdding}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">-100 ~ 0 사이의 정수를 입력하세요</p>
+                </div>
+              </div>
+              
+              <div className="flex items-center justify-end gap-3 mt-6">
+                <button
+                  onClick={handleCancelAdd}
+                  disabled={isAdding}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={handleSaveNewMeasurement}
+                  disabled={isAdding}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isAdding ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      추가 중...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      추가
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

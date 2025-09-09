@@ -8,11 +8,15 @@ export async function DELETE(request: NextRequest) {
     // 모든 모니터링 로그 삭제
     const deleteResult = await prisma.monitoringLog.deleteMany({});
     
-    console.log(`모니터링 로그 삭제 완료: ${deleteResult.count}개 삭제`);
+    // SQLite autoincrement 초기화
+    await prisma.$executeRaw`DELETE FROM sqlite_sequence WHERE name='monitoring_logs'`;
+    
+    console.log(`모니터링 로그 TRUNCATE 완료: ${deleteResult.count}개 삭제, autoincrement 초기화됨`);
     
     return NextResponse.json({
-      message: "모니터링 로그가 성공적으로 삭제되었습니다.",
-      deletedCount: deleteResult.count
+      message: "모니터링 로그가 성공적으로 삭제되고 autoincrement가 초기화되었습니다.",
+      deletedCount: deleteResult.count,
+      autoincrementReset: true
     });
     
   } catch (error: any) {

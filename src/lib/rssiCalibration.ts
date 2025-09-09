@@ -207,6 +207,31 @@ class RSSICalibrationManager {
   }
 
   /**
+   * 데이터베이스에서 보정 데이터 로드
+   */
+  public async loadCalibrationDataFromDatabase(): Promise<void> {
+    try {
+      const { prisma } = await import('@/lib/prisma');
+      const calibrationRecords = await prisma.rssiCalibration.findMany();
+      
+      console.log(`데이터베이스에서 ${calibrationRecords.length}개의 보정 데이터 로드 중...`);
+      
+      for (const record of calibrationRecords) {
+        this.addCalibrationData(
+          record.beaconId,
+          record.gatewayId,
+          record.distance,
+          record.rssi
+        );
+      }
+      
+      console.log(`보정 데이터 로드 완료: ${this.calibrationData.size}개 조합`);
+    } catch (error) {
+      console.error('보정 데이터 로드 실패:', error);
+    }
+  }
+
+  /**
    * 보정 상태 확인
    */
   public getCalibrationStatus(beaconId: string, gatewayId: string): {

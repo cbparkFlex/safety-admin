@@ -1,30 +1,30 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { AlertTriangle, MapPin, Wifi, Clock, Users, Activity, RefreshCw, CheckCircle, XCircle, Trash2 } from "lucide-react";
+import { AlertTriangle, MapPin, Wifi, Clock, Users, Activity, RefreshCw, CheckCircle, XCircle, Trash2, Settings } from "lucide-react";
 
-interface ProximityAlert {
-  id: number;
+interface BeaconStatus {
   beaconId: string;
-  gatewayId: string;
-  workerId?: number;
-  rssi: number;
-  distance: number;
-  threshold: number;
+  beaconName: string;
+  beaconLocation?: string;
+  currentRSSI: number | null;
+  currentDistance: number | null;
+  lastUpdate: Date | null;
   isAlert: boolean;
-  alertTime?: string;
-  createdAt: string;
-  beacon: {
-    name: string;
-    location?: string;
+  dangerLevel: 'safe' | 'warning' | 'danger';
+  calibrationInfo?: {
+    method: string;
+    confidence: string;
+    isCalibrated: boolean;
   };
-  gateway: {
-    name: string;
-    location: string;
-  };
-  worker?: {
-    name: string;
-  };
+}
+
+interface GatewayBeaconStatus {
+  gatewayId: string;
+  gatewayName: string;
+  gatewayLocation: string;
+  beacons: BeaconStatus[];
+  lastUpdate: Date;
 }
 
 interface DashboardStats {
@@ -37,7 +37,7 @@ interface DashboardStats {
 }
 
 export default function ProximityDashboard() {
-  const [alerts, setAlerts] = useState<ProximityAlert[]>([]);
+  const [gatewayStatuses, setGatewayStatuses] = useState<GatewayBeaconStatus[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
     totalAlerts: 0,
     activeAlerts: 0,
@@ -51,6 +51,7 @@ export default function ProximityDashboard() {
   const [mqttStatus, setMqttStatus] = useState<{connected: boolean, message: string} | null>(null);
   const [mqttConnecting, setMqttConnecting] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [reloadingCalibration, setReloadingCalibration] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -61,19 +62,37 @@ export default function ProximityDashboard() {
 
   const fetchData = async () => {
     try {
-      const [alertsResponse, statsResponse] = await Promise.all([
-        fetch("/api/proximity-alerts"),
+      const [gatewayStatusResponse, statsResponse] = await Promise.all([
+        fetch("/api/gateway-beacon-status"),
         fetch("/api/dashboard-stats")
       ]);
 
-      if (alertsResponse.ok) {
-        const alertsData = await alertsResponse.json();
-        setAlerts(alertsData);
+      if (gatewayStatusResponse.ok) {
+        const gatewayStatusData = await gatewayStatusResponse.json();
+        setGatewayStatuses(gatewayStatusData.data);
+        
+        // 통계 계산
+        const totalAlerts = gatewayStatusData.data.reduce((sum: number, gateway: GatewayBeaconStatus) => 
+          sum + gateway.beacons.filter(beacon => beacon.isAlert).length, 0);
+        const activeAlerts = totalAlerts;
+        const totalBeacons = gatewayStatusData.data.reduce((sum: number, gateway: GatewayBeaconStatus) => 
+          sum + gateway.beacons.length, 0);
+        const activeBeacons = gatewayStatusData.data.reduce((sum: number, gateway: GatewayBeaconStatus) => 
+          sum + gateway.beacons.filter(beacon => beacon.currentRSSI !== null).length, 0);
+        
+        setStats({
+          totalAlerts,
+          activeAlerts,
+          totalBeacons,
+          activeBeacons,
+          totalGateways: gatewayStatusData.data.length,
+          activeGateways: gatewayStatusData.data.length
+        });
       }
 
       if (statsResponse.ok) {
         const statsData = await statsResponse.json();
-        setStats(statsData);
+        // Gateway 상태에서 계산한 통계를 우선 사용
       }
     } catch (error) {
       console.error("데이터 조회 실패:", error);
@@ -120,14 +139,38 @@ export default function ProximityDashboard() {
     }
   };
 
+  const reloadCalibrationData = async () => {
+    setReloadingCalibration(true);
+    try {
+      const response = await fetch("/api/rssi-calibration/reload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        alert(`보정 데이터 재로드 완료!\n로드된 조합: ${result.loadedCombinations}개\n새로운 거리 계산이 적용됩니다.`);
+        console.log("보정 데이터 재로드 완료:", result);
+      } else {
+        const error = await response.json();
+        alert(`보정 데이터 재로드 실패: ${error.error || "알 수 없는 오류"}`);
+      }
+    } catch (error) {
+      console.error("보정 데이터 재로드 실패:", error);
+      alert("보정 데이터 재로드 중 오류가 발생했습니다.");
+    } finally {
+      setReloadingCalibration(false);
+    }
+  };
+
   const clearProximityAlerts = async () => {
-    if (!confirm("모든 근접 알림 데이터와 모니터링 로그를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.")) {
+    if (!confirm("모든 근접 알림 데이터와 모니터링 로그를 삭제하고 autoincrement를 초기화하시겠습니까?\n이 작업은 되돌릴 수 없습니다.")) {
       return;
     }
 
     setClearing(true);
     try {
-      // 근접 알림 데이터와 모니터링 로그를 함께 삭제
+      // 근접 알림 데이터와 모니터링 로그를 함께 삭제 (TRUNCATE)
       const [proximityResponse, monitoringResponse] = await Promise.all([
         fetch("/api/proximity-alerts", { method: "DELETE" }),
         fetch("/api/monitoring-logs", { method: "DELETE" })
@@ -138,8 +181,8 @@ export default function ProximityDashboard() {
       
       if (proximityResponse.ok) {
         const result = await proximityResponse.json();
-        console.log("근접 알림 데이터 삭제 완료:", result);
-        successMessages.push("근접 알림 데이터");
+        console.log("근접 알림 데이터 TRUNCATE 완료:", result);
+        successMessages.push("근접 알림 데이터 (autoincrement 초기화)");
       } else {
         const error = await proximityResponse.json();
         errorMessages.push(`근접 알림: ${error.error || "알 수 없는 오류"}`);
@@ -147,15 +190,15 @@ export default function ProximityDashboard() {
       
       if (monitoringResponse.ok) {
         const result = await monitoringResponse.json();
-        console.log("모니터링 로그 삭제 완료:", result);
-        successMessages.push("모니터링 로그");
+        console.log("모니터링 로그 TRUNCATE 완료:", result);
+        successMessages.push("모니터링 로그 (autoincrement 초기화)");
       } else {
         const error = await monitoringResponse.json();
         errorMessages.push(`모니터링 로그: ${error.error || "알 수 없는 오류"}`);
       }
       
       if (successMessages.length > 0) {
-        alert(`${successMessages.join(", ")} 삭제가 완료되었습니다.`);
+        alert(`${successMessages.join(", ")} 삭제가 완료되었습니다.\nautoincrement index가 초기화되었습니다.`);
       }
       
       if (errorMessages.length > 0) {
@@ -170,12 +213,6 @@ export default function ProximityDashboard() {
     } finally {
       setClearing(false);
     }
-  };
-
-  const getDangerLevel = (distance: number): 'safe' | 'warning' | 'danger' => {
-    if (distance > 5) return 'safe';
-    if (distance > 2) return 'warning';
-    return 'danger';
   };
 
   const getDangerColor = (level: 'safe' | 'warning' | 'danger') => {
@@ -194,14 +231,16 @@ export default function ProximityDashboard() {
     }
   };
 
-  const filteredAlerts = alerts.filter(alert => {
-    const dangerLevel = getDangerLevel(alert.distance);
-    switch (filter) {
-      case 'active': return alert.isAlert;
-      case 'danger': return dangerLevel === 'danger';
-      default: return true;
-    }
-  });
+  const filteredGatewayStatuses = gatewayStatuses.map(gateway => ({
+    ...gateway,
+    beacons: gateway.beacons.filter(beacon => {
+      switch (filter) {
+        case 'active': return beacon.isAlert;
+        case 'danger': return beacon.dangerLevel === 'danger';
+        default: return true;
+      }
+    })
+  })).filter(gateway => gateway.beacons.length > 0);
 
   if (loading) {
     return (
@@ -282,6 +321,21 @@ export default function ProximityDashboard() {
             </button>
           </div>
           
+          {/* 보정 데이터 재로드 버튼 */}
+          <button
+            onClick={reloadCalibrationData}
+            disabled={reloadingCalibration}
+            className={`px-3 py-1 rounded-md text-sm flex items-center gap-1 ${
+              reloadingCalibration 
+                ? 'bg-gray-400 text-white cursor-not-allowed' 
+                : 'bg-green-600 text-white hover:bg-green-700'
+            }`}
+            title="데이터베이스에서 RSSI 보정 데이터를 다시 로드하여 거리 계산 정확도 향상"
+          >
+            <Settings className={`w-3 h-3 ${reloadingCalibration ? 'animate-spin' : ''}`} />
+            {reloadingCalibration ? '로드 중...' : '보정 데이터 적용'}
+          </button>
+          
           {/* 개발용 초기화 버튼 */}
           <button
             onClick={clearProximityAlerts}
@@ -291,7 +345,7 @@ export default function ProximityDashboard() {
                 ? 'bg-gray-400 text-white cursor-not-allowed' 
                 : 'bg-red-600 text-white hover:bg-red-700'
             }`}
-            title="모든 근접 알림 데이터와 모니터링 로그 삭제 (개발용)"
+            title="모든 근접 알림 데이터와 모니터링 로그 삭제 및 autoincrement 초기화 (개발용)"
           >
             <Trash2 className={`w-3 h-3 ${clearing ? 'animate-pulse' : ''}`} />
             {clearing ? '삭제 중...' : '데이터 초기화'}
@@ -350,101 +404,128 @@ export default function ProximityDashboard() {
         </div>
       </div>
 
-      {/* 알림 목록 */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-medium text-gray-900">근접 알림 목록</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  비콘 정보
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  게이트웨이
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  작업자
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  거리
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  위험도
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  시간
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredAlerts.map((alert) => {
-                const dangerLevel = getDangerLevel(alert.distance);
-                return (
-                  <tr key={alert.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">
-                          {alert.beacon.name}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          ID: {alert.beaconId}
-                        </div>
-                        {alert.beacon.location && (
-                          <div className="text-sm text-gray-500 flex items-center">
-                            <MapPin className="w-3 h-3 mr-1" />
-                            {alert.beacon.location}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">
-                          {alert.gateway.name}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          {alert.gateway.location}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {alert.worker ? alert.worker.name : "미지정"}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">
-                          {alert.distance.toFixed(2)}m
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          RSSI: {alert.rssi} dBm
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getDangerColor(dangerLevel)}`}>
-                        {getDangerText(dangerLevel)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center text-sm text-gray-900">
-                        <Clock className="w-4 h-4 mr-1 text-gray-400" />
-                        {new Date(alert.createdAt).toLocaleString('ko-KR')}
-                      </div>
-                    </td>
+      {/* Gateway별 Beacon 상태 테이블 */}
+      <div className="space-y-6">
+        {filteredGatewayStatuses.map((gateway) => (
+          <div key={gateway.gatewayId} className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-medium text-gray-900">{gateway.gatewayName}</h2>
+                  <p className="text-sm text-gray-500 flex items-center">
+                    <MapPin className="w-4 h-4 mr-1" />
+                    {gateway.gatewayLocation}
+                  </p>
+                </div>
+                <div className="text-sm text-gray-500">
+                  마지막 업데이트: {new Date(gateway.lastUpdate).toLocaleString('ko-KR')}
+                </div>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      비콘 정보
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      현재 거리
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      RSSI
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      위험도
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      보정 상태
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      마지막 업데이트
+                    </th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {filteredAlerts.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
-            표시할 알림이 없습니다.
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {gateway.beacons.map((beacon) => (
+                    <tr key={beacon.beaconId} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">
+                            {beacon.beaconName}
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            ID: {beacon.beaconId}
+                          </div>
+                          {beacon.beaconLocation && (
+                            <div className="text-sm text-gray-500 flex items-center">
+                              <MapPin className="w-3 h-3 mr-1" />
+                              {beacon.beaconLocation}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">
+                          {beacon.currentDistance !== null 
+                            ? `${beacon.currentDistance.toFixed(2)}m`
+                            : "측정 없음"
+                          }
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {beacon.currentRSSI !== null 
+                            ? `${beacon.currentRSSI} dBm`
+                            : "측정 없음"
+                          }
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getDangerColor(beacon.dangerLevel)}`}>
+                          {getDangerText(beacon.dangerLevel)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {beacon.calibrationInfo ? (
+                          <div className="text-sm">
+                            <div className={`font-medium ${
+                              beacon.calibrationInfo.isCalibrated ? 'text-green-600' : 'text-gray-500'
+                            }`}>
+                              {beacon.calibrationInfo.isCalibrated ? '보정됨' : '기본 모델'}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {beacon.calibrationInfo.method} ({beacon.calibrationInfo.confidence})
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-500">알 수 없음</div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center text-sm text-gray-900">
+                          <Clock className="w-4 h-4 mr-1 text-gray-400" />
+                          {beacon.lastUpdate 
+                            ? new Date(beacon.lastUpdate).toLocaleString('ko-KR')
+                            : "업데이트 없음"
+                          }
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {gateway.beacons.length === 0 && (
+              <div className="text-center py-8 text-gray-500">
+                표시할 비콘이 없습니다.
+              </div>
+            )}
+          </div>
+        ))}
+        {filteredGatewayStatuses.length === 0 && (
+          <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
+            표시할 Gateway가 없습니다.
           </div>
         )}
       </div>

@@ -1,4 +1,5 @@
 import { initializeMQTTClient } from './mqttClient';
+import { rssiCalibration } from './rssiCalibration';
 
 let isInitialized = false;
 
@@ -7,6 +8,9 @@ export async function initializeServer() {
   
   try {
     console.log('서버 초기화 중...');
+    
+    // RSSI 보정 데이터 로드
+    await rssiCalibration.loadCalibrationDataFromDatabase();
     
     // MQTT 클라이언트 초기화
     await initializeMQTTClient();

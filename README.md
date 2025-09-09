@@ -302,6 +302,51 @@ npx prisma migrate deploy
 npx prisma migrate reset
 ```
 
+
+
+## 🗄️ PostgreSQL 마이그레이션
+
+### 1. PostgreSQL 설치 및 설정
+```bash
+# Ubuntu/Debian
+sudo apt-get install postgresql postgresql-contrib
+
+# macOS
+brew install postgresql
+
+# Windows
+# https://www.postgresql.org/download/windows/ 에서 다운로드
+```
+
+### 2. 데이터베이스 생성
+```sql
+CREATE DATABASE safety_admin;
+CREATE USER safety_user WITH PASSWORD 'your_password';
+GRANT ALL PRIVILEGES ON DATABASE safety_admin TO safety_user;
+```
+
+### 3. Prisma 스키마 변경
+`prisma/schema.prisma` 파일에서 데이터베이스 프로바이더를 변경:
+```prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+```
+
+### 4. 환경 변수 변경
+`.env` 파일에서 PostgreSQL URL 설정:
+```env
+DATABASE_URL="postgresql://safety_user:your_password@localhost:5432/safety_admin?schema=public"
+```
+
+### 5. 마이그레이션 실행
+```bash
+npm run db:migrate
+npm run db:seed
+```
+
+
 ## 📡 BLE Beacon 근접 알림 시스템
 
 ### 시스템 아키텍처
@@ -434,47 +479,19 @@ fetch('/api/dashboard-stats').then(r => r.json()).then(console.log);
 7. **BLE Mesh 네트워크**: 다중 Gateway 지원
 8. **머신러닝 기반 거리 정확도 향상**: 노이즈 필터링 및 예측 모델
 
-## 🗄️ PostgreSQL 마이그레이션
-
-### 1. PostgreSQL 설치 및 설정
-```bash
-# Ubuntu/Debian
-sudo apt-get install postgresql postgresql-contrib
-
-# macOS
-brew install postgresql
-
-# Windows
-# https://www.postgresql.org/download/windows/ 에서 다운로드
-```
-
-### 2. 데이터베이스 생성
-```sql
-CREATE DATABASE safety_admin;
-CREATE USER safety_user WITH PASSWORD 'your_password';
-GRANT ALL PRIVILEGES ON DATABASE safety_admin TO safety_user;
-```
-
-### 3. Prisma 스키마 변경
-`prisma/schema.prisma` 파일에서 데이터베이스 프로바이더를 변경:
-```prisma
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-```
-
-### 4. 환경 변수 변경
-`.env` 파일에서 PostgreSQL URL 설정:
-```env
-DATABASE_URL="postgresql://safety_user:your_password@localhost:5432/safety_admin?schema=public"
-```
-
-### 5. 마이그레이션 실행
-```bash
-npm run db:migrate
-npm run db:seed
-```
+## 고려할 점
+1단계: 이상치 보정 추가 (즉시 적용 가능)
+현재 시스템에 RSSI 필터링 추가
+이동평균 및 이상치 제거 구현
+2단계: 베이지안 필터링 (1-2주)
+칼만 필터로 RSSI 스무딩
+시간적 일관성 확보
+3단계: 머신러닝 모델 (2-4주)
+크레인별 학습 데이터 수집
+LSTM 기반 패턴 학습
+4단계: 다중 게이트웨이 융합 (1-2주)
+8개 크레인의 게이트웨이 데이터 융합
+가중치 기반 거리 계산
 
 ## 🤝 기여하기
 
