@@ -70,29 +70,11 @@ export default function ProximityDashboard() {
       if (gatewayStatusResponse.ok) {
         const gatewayStatusData = await gatewayStatusResponse.json();
         setGatewayStatuses(gatewayStatusData.data);
-        
-        // 통계 계산
-        const totalAlerts = gatewayStatusData.data.reduce((sum: number, gateway: GatewayBeaconStatus) => 
-          sum + gateway.beacons.filter(beacon => beacon.isAlert).length, 0);
-        const activeAlerts = totalAlerts;
-        const totalBeacons = gatewayStatusData.data.reduce((sum: number, gateway: GatewayBeaconStatus) => 
-          sum + gateway.beacons.length, 0);
-        const activeBeacons = gatewayStatusData.data.reduce((sum: number, gateway: GatewayBeaconStatus) => 
-          sum + gateway.beacons.filter(beacon => beacon.currentRSSI !== null).length, 0);
-        
-        setStats({
-          totalAlerts,
-          activeAlerts,
-          totalBeacons,
-          activeBeacons,
-          totalGateways: gatewayStatusData.data.length,
-          activeGateways: gatewayStatusData.data.length
-        });
       }
 
       if (statsResponse.ok) {
         const statsData = await statsResponse.json();
-        // Gateway 상태에서 계산한 통계를 우선 사용
+        setStats(statsData);
       }
     } catch (error) {
       console.error("데이터 조회 실패:", error);
@@ -263,35 +245,6 @@ export default function ProximityDashboard() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">근접 알림 대시보드</h1>
         <div className="flex items-center gap-4">
-          {/* MQTT 연결 상태 및 버튼 */}
-          <div className="flex items-center gap-2">
-            {mqttStatus && (
-              <div className="flex items-center gap-1">
-                {mqttStatus.connected ? (
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                ) : (
-                  <XCircle className="w-4 h-4 text-red-600" />
-                )}
-                <span className={`text-sm font-medium ${
-                  mqttStatus.connected ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  MQTT {mqttStatus.connected ? '연결됨' : '연결 안됨'}
-                </span>
-              </div>
-            )}
-            <button
-              onClick={connectMqtt}
-              disabled={mqttConnecting}
-              className={`px-3 py-1 rounded-md text-sm flex items-center gap-1 ${
-                mqttConnecting 
-                  ? 'bg-gray-400 text-white cursor-not-allowed' 
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
-            >
-              <RefreshCw className={`w-3 h-3 ${mqttConnecting ? 'animate-spin' : ''}`} />
-              {mqttConnecting ? '연결 중...' : 'MQTT 연결'}
-            </button>
-          </div>
           
           {/* 필터 버튼들 */}
           <div className="flex gap-2">

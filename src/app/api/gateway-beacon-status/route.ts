@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getLatestRSSI } from "@/lib/mqttClient";
+import { getLatestRSSI, latestRSSIData } from "@/lib/mqttClient";
 import { rssiCalibration } from "@/lib/rssiCalibration";
 
 interface BeaconStatus {
@@ -29,7 +29,7 @@ interface GatewayBeaconStatus {
 
 export async function GET(request: NextRequest) {
   try {
-    console.log("Gateway별 Beacon 상태 조회 시작");
+    console.log("📊 Gateway별 Beacon 상태 조회 시작");
     
     // 모든 활성 Gateway 조회
     const gateways = await prisma.gateway.findMany({
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     const gatewayStatuses: GatewayBeaconStatus[] = [];
 
     for (const gateway of gateways) {
-      console.log(`Gateway ${gateway.name} 처리 중...`);
+      // Gateway 처리 (로그 간소화)
       
       // 해당 Gateway와 관련된 모든 활성 Beacon 조회
       const beacons = await prisma.beacon.findMany({
@@ -52,6 +52,8 @@ export async function GET(request: NextRequest) {
 
       for (const beacon of beacons) {
         // 최신 RSSI 데이터 조회
+        // RSSI 조회 (로그 간소화)
+        
         const latestRSSI = getLatestRSSI(beacon.beaconId, gateway.gatewayId);
         
         let currentDistance: number | null = null;
@@ -99,7 +101,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    console.log(`Gateway별 Beacon 상태 조회 완료: ${gatewayStatuses.length}개 Gateway`);
+    console.log(`✅ Gateway별 Beacon 상태 조회 완료: ${gatewayStatuses.length}개 Gateway`);
 
     return NextResponse.json({
       message: "Gateway별 Beacon 상태 조회 완료",
@@ -124,7 +126,7 @@ export async function GET(request: NextRequest) {
  */
 function getDangerLevel(distance: number): 'safe' | 'warning' | 'danger' {
   if (distance > 5) return 'safe';
-  if (distance > 2) return 'warning';
+  if (distance > 0.5) return 'warning';
   return 'danger';
 }
 

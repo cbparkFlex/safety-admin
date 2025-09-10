@@ -149,7 +149,7 @@ export function shouldAlert(distance: number, threshold: number = 5.0): boolean 
  */
 export function getDangerLevel(distance: number): 'safe' | 'warning' | 'danger' {
   if (distance > 5) return 'safe';
-  if (distance > 2) return 'warning';
+  if (distance > 0.5) return 'warning';
   return 'danger';
 }
 

@@ -4,8 +4,12 @@ import { calculateAccurateDistance, shouldAlert, getDangerLevel } from './distan
 import { rssiSmoother } from './rssiSmoother';
 import { initializeScheduler } from './initScheduler';
 
-// 실시간 측정을 위한 RSSI 데이터 저장소
-const latestRSSIData = new Map<string, { rssi: number; timestamp: number }>();
+// 실시간 측정을 위한 RSSI 데이터 저장소 (전역 변수)
+export const latestRSSIData = new Map<string, { rssi: number; timestamp: number }>();
+
+// 중복 메시지 방지를 위한 처리된 메시지 추적
+const processedMessages = new Map<string, number>();
+const MESSAGE_DEDUP_WINDOW = 1000; // 1초 내 중복 메시지 무시
 
 // MQTT 클라이언트 설정
 const MQTT_BROKER_URL = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883';
@@ -91,10 +95,11 @@ export function initializeMQTTClient(): Promise<boolean> {
         reject(error);
       });
 
-      mqttClient.on('message', (topic, message) => {
-        // console.log(`MQTT 메시지 수신됨: ${topic}, 크기: ${message.length} bytes`);
-        handleBeaconMessage(topic, message);
-      });
+mqttClient.on('message', (topic, message) => {
+  // 중복 메시지 방지를 위한 간단한 로그
+  console.log(`📨 MQTT 메시지 수신: ${topic}`);
+  handleBeaconMessage(topic, message);
+});
 
       mqttClient.on('reconnect', () => {
         console.log('MQTT 재연결 시도 중...');
@@ -187,14 +192,13 @@ async function handleBeaconMessage(topic: string, message: Buffer) {
 }
 
 async function handleGatewayMessage(topic: string, gatewayMessage: GatewayMessage) {
-//   console.log(`Gateway 메시지 처리: ${topic}, Beacon 개수: ${gatewayMessage.obj.length}`);
+  // Gateway 메시지 처리 로그 간소화
+  console.log(`📡 Gateway 처리: ${gatewayMessage.obj.length}개 Beacon`);
   
   for (const beaconData of gatewayMessage.obj) {
     // MAC 주소를 Beacon ID로 변환
     const beaconId = `BEACON_${beaconData.dmac.toUpperCase()}`;
     const gatewayId = `GW_${gatewayMessage.gmac}`;
-    
-    // console.log(`변환된 ID: Beacon=${beaconId}, Gateway=${gatewayId}`);
     
     const messageData: BeaconMessage = {
       beaconId,
@@ -205,33 +209,42 @@ async function handleGatewayMessage(topic: string, gatewayMessage: GatewayMessag
       major: beaconData.majorID,
       minor: beaconData.minorID
     };
-    
-    // console.log(`Beacon 데이터 변환: ${beaconId}, RSSI: ${beaconData.rssi}dBm`);
     await processBeaconMessage(messageData);
   }
 }
 
 async function processBeaconMessage(messageData: BeaconMessage) {
   try {
-    // 실시간 측정을 위한 RSSI 데이터 저장
-    const dataKey = `${messageData.beaconId}_${messageData.gatewayId}`;
-    latestRSSIData.set(dataKey, {
-      rssi: messageData.rssi,
-      timestamp: Date.now()
-    });
-    console.log(`RSSI 데이터 저장: ${dataKey} = ${messageData.rssi}dBm`);
+    // 중복 메시지 방지: 같은 beacon+gateway+rssi 조합이 1초 내에 처리되었는지 확인
+    const messageKey = `${messageData.beaconId}_${messageData.gatewayId}_${messageData.rssi}`;
+    const now = Date.now();
+    const lastProcessed = processedMessages.get(messageKey);
+    
+    if (lastProcessed && (now - lastProcessed) < MESSAGE_DEDUP_WINDOW) {
+      // 중복 메시지 무시
+      return;
+    }
+    
+    // 메시지 처리 시간 기록
+    processedMessages.set(messageKey, now);
+    
+    // 오래된 메시지 키 정리 (메모리 누수 방지)
+    if (processedMessages.size > 1000) {
+      const cutoff = now - MESSAGE_DEDUP_WINDOW * 10;
+      for (const [key, timestamp] of processedMessages.entries()) {
+        if (timestamp < cutoff) {
+          processedMessages.delete(key);
+        }
+      }
+    }
 
-    // Beacon 정보 조회
-    // console.log(`Beacon 조회 시도: ${messageData.beaconId}`);
+    // Beacon 정보 조회 (먼저 등록된 Beacon인지 확인)
     const beacon = await prisma.beacon.findUnique({
       where: { beaconId: messageData.beaconId }
     });
 
     if (!beacon) {
-      console.warn(`알 수 없는 Beacon ID: ${messageData.beaconId}`);
-      console.log('등록된 모든 Beacon ID 확인 중...');
-      const allBeacons = await prisma.beacon.findMany({ select: { beaconId: true } });
-      console.log('등록된 Beacon IDs:', allBeacons.map(b => b.beaconId));
+      // 등록되지 않은 Beacon은 데이터 저장하지 않고 조용히 무시
       return;
     }
     
@@ -244,12 +257,18 @@ async function processBeaconMessage(messageData: BeaconMessage) {
     });
 
     if (!gateway) {
-      console.warn(`알 수 없는 Gateway ID: ${messageData.gatewayId}`);
-      console.log('등록된 모든 Gateway ID 확인 중...');
-      const allGateways = await prisma.gateway.findMany({ select: { gatewayId: true } });
-      console.log('등록된 Gateway IDs:', allGateways.map(g => g.gatewayId));
+      // 등록되지 않은 Gateway는 데이터 저장하지 않고 조용히 무시
       return;
     }
+    
+    // 등록된 Beacon과 Gateway인 경우에만 실시간 RSSI 데이터 저장
+    const dataKey = `${messageData.beaconId}_${messageData.gatewayId}`;
+    latestRSSIData.set(dataKey, {
+      rssi: messageData.rssi,
+      timestamp: Date.now()
+    });
+    // RSSI 저장 로그 간소화 (중복 제거)
+    console.log(`💾 RSSI 저장: ${messageData.beaconId} = ${messageData.rssi}dBm`);
     
     // console.log(`Gateway 찾음: ${gateway.name} (Topic: ${gateway.mqttTopic})`);
 
@@ -277,11 +296,7 @@ async function processBeaconMessage(messageData: BeaconMessage) {
       console.log(`RSSI 스무딩: 원본=${messageData.rssi}dBm → 스무딩=${smoothedRSSI}dBm, 거리=${smoothedDistance.toFixed(2)}m (기본 모델)`);
     }
 
-    // 히스토리 상태 로그 (디버깅용)
-    const historyStatus = rssiSmoother.getHistoryStatus(messageData.beaconId);
-    if (historyStatus.count > 1) {
-      console.log(`히스토리: ${historyStatus.count}개 샘플, ${historyStatus.timeSpan.toFixed(1)}초, RSSI 범위: ${historyStatus.rssiRange.min}~${historyStatus.rssiRange.max}dBm`);
-    }
+    // 히스토리 상태 로그 제거됨 (스무딩 제거로 불필요)
     
     // 근접 알림 여부 판단
     const isAlert = shouldAlert(smoothedDistance, 5.0); // 5m 임계값
@@ -389,29 +404,67 @@ export function publishTestMessage(topic: string, message: any) {
 }
 
 /**
+ * 등록되지 않은 Beacon 데이터 정리
+ */
+export async function cleanupUnregisteredBeaconData() {
+  try {
+    console.log('등록되지 않은 Beacon 데이터 정리 시작...');
+    
+    // 등록된 Beacon과 Gateway 목록 조회
+    const [registeredBeacons, registeredGateways] = await Promise.all([
+      prisma.beacon.findMany({ select: { beaconId: true } }),
+      prisma.gateway.findMany({ select: { gatewayId: true } })
+    ]);
+    
+    const beaconIds = new Set(registeredBeacons.map(b => b.beaconId));
+    const gatewayIds = new Set(registeredGateways.map(g => g.gatewayId));
+    
+    // 등록되지 않은 데이터 키 찾기
+    const keysToDelete: string[] = [];
+    for (const [key, data] of latestRSSIData.entries()) {
+      const [beaconId, gatewayId] = key.split('_');
+      const fullBeaconId = `BEACON_${beaconId}`;
+      const fullGatewayId = `GW_${gatewayId}`;
+      
+      if (!beaconIds.has(fullBeaconId) || !gatewayIds.has(fullGatewayId)) {
+        keysToDelete.push(key);
+      }
+    }
+    
+    // 등록되지 않은 데이터 삭제
+    for (const key of keysToDelete) {
+      latestRSSIData.delete(key);
+    }
+    
+    console.log(`등록되지 않은 Beacon 데이터 정리 완료: ${keysToDelete.length}개 삭제`);
+    console.log(`현재 저장된 데이터: ${latestRSSIData.size}개`);
+    
+    return keysToDelete.length;
+  } catch (error) {
+    console.error('등록되지 않은 Beacon 데이터 정리 실패:', error);
+    return 0;
+  }
+}
+
+/**
  * 실시간 측정을 위한 최신 RSSI 데이터 조회
  */
 export function getLatestRSSI(beaconId: string, gatewayId: string): number | null {
   const dataKey = `${beaconId}_${gatewayId}`;
   const data = latestRSSIData.get(dataKey);
   
-  console.log(`RSSI 조회 요청: ${dataKey}`);
-  console.log(`저장된 데이터:`, data);
-  console.log(`전체 저장된 키들:`, Array.from(latestRSSIData.keys()));
-  
   if (!data) {
-    console.log(`RSSI 데이터 없음: ${dataKey}`);
     return null;
   }
   
   // 5초 이내의 데이터만 유효
   const now = Date.now();
-  if (now - data.timestamp > 5000) {
-    console.log(`RSSI 데이터 만료: ${dataKey}, ${now - data.timestamp}ms 경과`);
+  const timeDiff = now - data.timestamp;
+  
+  if (timeDiff > 5000) {
     latestRSSIData.delete(dataKey);
     return null;
   }
   
-  console.log(`RSSI 데이터 반환: ${dataKey} = ${data.rssi}dBm`);
   return data.rssi;
 }
