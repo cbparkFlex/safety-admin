@@ -21,6 +21,50 @@ let mqttClient: mqtt.MqttClient | null = null;
 // mqttClient export
 export { mqttClient };
 
+// 비콘 명령 전송 함수
+export async function sendBeaconCommand(beaconId: string, command: any): Promise<boolean> {
+  if (!mqttClient || !mqttClient.connected) {
+    console.error('MQTT 클라이언트가 연결되지 않았습니다.');
+    return false;
+  }
+
+  try {
+    // Gateway의 subaction topic으로 명령 전송 (KBeacon configuration message용)
+    const subactionTopic = 'safety/beacon/gateway_1/subaction';
+    
+    // KBeacon 문서에 따른 올바른 메시지 형식 구성
+    const gatewayMessage = {
+      msg: "dData",                    // Gateway Message Head
+      mac: command.mac,                // 비콘 MAC 주소
+      seq: Math.floor(Date.now() / 1000) % 1000000,  // 시퀀스 번호 (6자리)
+      auth1: "0000000000000000",       // 기본 비밀번호
+      dType: "json",                   // 다운로드 메시지 타입
+      data: {                          // Message Body (비콘으로 전달)
+        msg: command.msg,              // "ring"
+        ringType: command.ringType,    // 4 (vibration)
+        ringTime: command.ringTime,    // 1000 (1초)
+        ledOn: command.ledOn,          // 500 (LED 켜짐 시간)
+        ledOff: command.ledOff         // 1500 (LED 꺼짐 시간)
+      }
+    };
+    
+    console.log(`📤 비콘 명령 전송: ${beaconId}`, gatewayMessage);
+    
+    mqttClient.publish(subactionTopic, JSON.stringify(gatewayMessage), (error) => {
+      if (error) {
+        console.error(`비콘 명령 전송 실패: ${beaconId}`, error);
+      } else {
+        console.log(`✅ 비콘 명령 전송 성공: ${beaconId}`);
+      }
+    });
+
+    return true;
+  } catch (error) {
+    console.error('비콘 명령 전송 중 오류:', error);
+    return false;
+  }
+}
+
 export interface BeaconMessage {
   beaconId: string;
   gatewayId: string;
@@ -98,6 +142,13 @@ export function initializeMQTTClient(): Promise<boolean> {
 mqttClient.on('message', (topic, message) => {
   // 중복 메시지 방지를 위한 간단한 로그
   console.log(`📨 MQTT 메시지 수신: ${topic}`);
+  
+  // 응답 토픽에 대한 특별한 로그
+  if (topic.includes('/response')) {
+    console.log(`🔔 Gateway 응답 토픽 수신: ${topic}`);
+    console.log(`📄 응답 메시지 내용:`, message.toString());
+  }
+  
   handleBeaconMessage(topic, message);
 });
 
@@ -138,8 +189,10 @@ async function subscribeToBeaconTopics() {
 
     const topics = gateways.map(gw => `${gw.mqttTopic}/+`); // +는 모든 하위 토픽
     const wildcardTopic = 'safety/beacon/+'; // 전체 beacon 토픽
+    const responseTopic = 'safety/beacon/gateway_1/response'; // Gateway 응답 토픽
+    const subactionTopic = 'safety/beacon/gateway_1/subaction'; // KBeacon configuration message 토픽
 
-    const allTopics = [...topics, wildcardTopic];
+    const allTopics = [...topics, wildcardTopic, responseTopic, subactionTopic];
     console.log(`구독할 토픽 목록: ${allTopics.join(', ')}`);
     
     for (const topic of allTopics) {
@@ -173,6 +226,48 @@ async function handleBeaconMessage(topic: string, message: Buffer) {
         uptime: rawMessage.uptime
       });
       return; // alive 메시지는 처리하지 않고 종료
+    }
+
+    // 비콘 명령 메시지인지 확인 (subaction 토픽)
+    if (topic.includes('/subaction') && (rawMessage.msg === 'dData' || rawMessage.msg === 'cfg')) {
+      console.log(`📤 비콘 명령 메시지 수신: ${topic}`, rawMessage);
+      console.log(`🔍 Gateway가 명령을 받았습니다. 응답을 기다리는 중...`);
+      return; // 명령 메시지는 처리하지 않고 종료
+    }
+
+    // Gateway 응답 메시지인지 확인 (dAck 메시지)
+    if (rawMessage.msg === 'dAck') {
+      console.log(`📥 Gateway 응답 수신: ${topic}`, {
+        mac: rawMessage.mac,
+        seq: rawMessage.seq,
+        rslt: rawMessage.rslt,
+        cause: rawMessage.cause,
+        gmac: rawMessage.gmac
+      });
+      
+      if (rawMessage.rslt === 'succ') {
+        console.log(`✅ 비콘 명령 성공: ${rawMessage.mac}`);
+      } else {
+        console.log(`❌ 비콘 명령 실패: ${rawMessage.mac} - ${rawMessage.cause}`);
+      }
+      return; // 응답 메시지는 처리하지 않고 종료
+    }
+
+    // Gateway 응답 메시지인지 확인 (비콘 명령 응답)
+    if (topic.includes('/response') && rawMessage.ack !== undefined) {
+      console.log(`📥 Gateway 응답 수신: ${topic}`, {
+        targetBeacon: rawMessage.targetBeacon,
+        command: rawMessage.command,
+        ack: rawMessage.ack,
+        message: rawMessage.message
+      });
+      
+      if (rawMessage.ack === 0) {
+        console.log(`✅ 비콘 명령 성공: ${rawMessage.targetBeacon}`);
+      } else {
+        console.log(`❌ 비콘 명령 실패: ${rawMessage.targetBeacon} - ${rawMessage.message}`);
+      }
+      return; // 응답 메시지는 처리하지 않고 종료
     }
     
     // Gateway 메시지 형식인지 확인

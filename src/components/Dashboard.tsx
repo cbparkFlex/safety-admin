@@ -404,28 +404,28 @@ export default function Dashboard() {
               {/* B동 센서들 - absolute 포지션 */}
               <div className="absolute inset-0">
                 {/* B동 센서 1-4 */}
-                <div className="absolute top-[10%] left-[15%]">
+                <div className="absolute top-[7%] left-[26%]">
                   <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
                     <div className="text-xs font-medium text-green-800">1번</div>
                     <div className="text-xs text-green-600">안전</div>
                     <div className="text-xs text-green-600">0.03ppm</div>
                   </div>
                 </div>
-                <div className="absolute top-[10%] left-[25%]">
+                <div className="absolute top-[7%] left-[30%]">
                   <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
                     <div className="text-xs font-medium text-green-800">2번</div>
                     <div className="text-xs text-green-600">안전</div>
                     <div className="text-xs text-green-600">0.03ppm</div>
                   </div>
                 </div>
-                <div className="absolute top-[10%] left-[35%]">
+                <div className="absolute top-[7%] left-[34%]">
                   <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
                     <div className="text-xs font-medium text-green-800">3번</div>
                     <div className="text-xs text-green-600">안전</div>
                     <div className="text-xs text-green-600">0.03ppm</div>
                   </div>
                 </div>
-                <div className="absolute top-[10%] left-[45%]">
+                <div className="absolute top-[7%] left-[45%]">
                   <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
                     <div className="text-xs font-medium text-green-800">4번</div>
                     <div className="text-xs text-green-600">안전</div>
@@ -510,21 +510,21 @@ export default function Dashboard() {
                 </div>
 
                 {/* A동 센서들 */}
-                <div className="absolute top-[10%] right-[25%]">
+                <div className="absolute top-[7%] right-[25%]">
                   <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
                     <div className="text-xs font-medium text-green-800">1번</div>
                     <div className="text-xs text-green-600">안전</div>
                     <div className="text-xs text-green-600">0.03ppm</div>
                   </div>
                 </div>
-                <div className="absolute top-[10%] right-[15%]">
+                <div className="absolute top-[7%] right-[15%]">
                   <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
                     <div className="text-xs font-medium text-green-800">2번</div>
                     <div className="text-xs text-green-600">안전</div>
                     <div className="text-xs text-green-600">0.03ppm</div>
                   </div>
                 </div>
-                <div className="absolute top-[10%] right-[5%]">
+                <div className="absolute top-[7%] right-[5%]">
                   <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
                     <div className="text-xs font-medium text-green-800">3번</div>
                     <div className="text-xs text-green-600">안전</div>

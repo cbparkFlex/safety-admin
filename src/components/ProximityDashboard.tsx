@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { AlertTriangle, MapPin, Wifi, Clock, Users, Activity, RefreshCw, CheckCircle, XCircle, Trash2, Settings } from "lucide-react";
+import { AlertTriangle, MapPin, Wifi, Clock, Users, Activity, RefreshCw, CheckCircle, XCircle, Trash2, Settings, Smartphone } from "lucide-react";
 
 interface BeaconStatus {
   beaconId: string;
@@ -48,6 +48,7 @@ export default function ProximityDashboard() {
   });
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'active' | 'danger'>('all');
+  const [vibratingBeacons, setVibratingBeacons] = useState<Set<string>>(new Set());
   const [mqttStatus, setMqttStatus] = useState<{connected: boolean, message: string} | null>(null);
   const [mqttConnecting, setMqttConnecting] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -142,6 +143,45 @@ export default function ProximityDashboard() {
       alert("보정 데이터 재로드 중 오류가 발생했습니다.");
     } finally {
       setReloadingCalibration(false);
+    }
+  };
+
+  const handleVibrateBeacon = async (beaconId: string) => {
+    try {
+      // 진동 중인 비콘 목록에 추가
+      setVibratingBeacons(prev => new Set(prev).add(beaconId));
+      
+      const response = await fetch('/api/beacon-vibrate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          beaconId: beaconId,
+          ringType: 4, // 0x4: vibration
+          ringTime: 4000, // 1초
+        }),
+      });
+      
+      if (response.ok) {
+        console.log(`비콘 ${beaconId} 진동 명령 전송 완료`);
+      } else {
+        const error = await response.json();
+        console.error(`비콘 ${beaconId} 진동 명령 실패:`, error.message);
+        alert(`진동 명령 전송 실패: ${error.message}`);
+      }
+    } catch (error) {
+      console.error('진동 명령 전송 중 오류:', error);
+      alert('진동 명령 전송 중 오류가 발생했습니다.');
+    } finally {
+      // 1초 후 진동 중인 비콘 목록에서 제거
+      setTimeout(() => {
+        setVibratingBeacons(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(beaconId);
+          return newSet;
+        });
+      }, 1000);
     }
   };
 
@@ -397,6 +437,9 @@ export default function ProximityDashboard() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       마지막 업데이트
                     </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      동작
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -463,6 +506,21 @@ export default function ProximityDashboard() {
                             : "업데이트 없음"
                           }
                         </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <button
+                          onClick={() => handleVibrateBeacon(beacon.beaconId)}
+                          disabled={vibratingBeacons.has(beacon.beaconId)}
+                          className={`inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md transition-colors ${
+                            vibratingBeacons.has(beacon.beaconId)
+                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                              : 'bg-blue-100 text-blue-700 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                          }`}
+                          title="비콘 진동 (1초)"
+                        >
+                          <Smartphone className="w-3 h-3 mr-1" />
+                          {vibratingBeacons.has(beacon.beaconId) ? '진동 중...' : '진동'}
+                        </button>
                       </td>
                     </tr>
                   ))}

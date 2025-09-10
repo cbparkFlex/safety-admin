@@ -119,7 +119,7 @@ export default function Header({
       <div className="flex items-center justify-between px-6 py-4">
         <div className="flex items-center space-x-6">
           <Link href="/" className="text-2xl font-bold hover:text-blue-600 transition-colors">
-            LOGO
+            대진중공업
           </Link>
           <div className="text-gray-600">
             {formattedDate}
