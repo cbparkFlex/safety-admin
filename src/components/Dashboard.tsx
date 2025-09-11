@@ -80,6 +80,16 @@ export default function Dashboard() {
   
   // 비상상황 기록 상태
   const [emergencyRecords, setEmergencyRecords] = useState<EmergencyRecord[]>([]);
+  
+  // 날씨 정보 상태
+  const [weatherInfo, setWeatherInfo] = useState<{
+    temperature: number;
+    description: string;
+    emoji: string;
+    humidity: number;
+    windSpeed: number;
+    location: string;
+  } | null>(null);
 
   // 알림 메시지 추가 함수
   const addAlertMessage = (alert: Omit<AlertMessage, 'id' | 'timestamp'>) => {
@@ -217,6 +227,21 @@ export default function Dashboard() {
     }
   };
 
+  // 진행중인 비상상황 클릭 시 EmergencyPopup 열기
+  const handleContinueEmergency = async (record: EmergencyRecord) => {
+    try {
+      // 해당 비상상황의 최신 데이터를 가져와서 EmergencyPopup에 표시
+      const response = await fetch(`/api/emergency/incidents/${record.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        setActiveEmergency(data.data);
+        setShowEmergencyPopup(true);
+      }
+    } catch (error) {
+      console.error('비상상황 데이터 조회 실패:', error);
+    }
+  };
+
   // 알림 메시지 비활성화 함수
   const deactivateAlert = (id: string) => {
     setAlertMessages(prev => 
@@ -287,6 +312,29 @@ export default function Dashboard() {
     }
   };
 
+  const fetchWeatherInfo = async () => {
+    try {
+      const response = await fetch('/api/weather');
+      const result = await response.json();
+      
+      if (result.success) {
+        setWeatherInfo(result.data);
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (err) {
+      console.error('날씨 정보를 가져오는 중 오류가 발생했습니다:', err);
+      // 에러 시 기본값 설정
+      setWeatherInfo({
+        temperature: 25,
+        description: '맑음',
+        humidity: 60,
+        windSpeed: 3,
+        location: '경남 창원시 마산합포구 진북면'
+      });
+    }
+  };
+
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
@@ -313,11 +361,18 @@ export default function Dashboard() {
     fetchGasSensors();
     // 비상상황 기록 데이터 가져오기
     fetchEmergencyRecords();
+    // 날씨 정보 가져오기
+    fetchWeatherInfo();
 
     // 가스 센서 데이터 실시간 업데이트 (5초마다)
     const gasSensorInterval = setInterval(() => {
       fetchGasSensors();
     }, 5000);
+
+    // 날씨 정보 업데이트 (10분마다)
+    const weatherInterval = setInterval(() => {
+      fetchWeatherInfo();
+    }, 600000); // 10분 = 600,000ms
 
     // 시뮬레이션: 가스 누출 감지 알림 추가
     const alertInterval = setInterval(() => {
@@ -369,6 +424,7 @@ export default function Dashboard() {
       clearInterval(alertInterval);
       clearInterval(normalInterval);
       clearInterval(gasSensorInterval);
+      clearInterval(weatherInterval);
     };
   }, []);
 
@@ -601,11 +657,11 @@ export default function Dashboard() {
         <div className="col-span-3 gap-6 space-y-4">
           {/* 상단 카드들 - 1:1:1:2 비율 */}
           
-          <div className="grid grid-cols-5 gap-6">
+          <div className="grid grid-cols-6 gap-6">
             <div className="text-lg font-semibold col-span-3 text-gray-900">출근자 정보</div>
-            <div className="text-lg font-semibold text-gray-900">감지 기록</div>
+            <div className="text-lg font-semibold text-gray-900">비상상황 기록</div>
           </div>
-          <div className="grid grid-cols-5 gap-8">
+          <div className="grid grid-cols-6 gap-8">
             {/* 출근 작업자 */}
             <div className="bg-[#1E4E8B] text-white rounded-lg p-6">
               <div className="space-y-4">
@@ -651,8 +707,9 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
+
             {/* 비상상황 기록 */}
-            <div className="col-span-2 bg-white rounded-lg p-6 shadow-sm">
+            <div className="col-span-3 bg-white rounded-lg p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-800">비상상황 기록</h3>
                 <div className="flex items-center gap-2">
@@ -673,56 +730,82 @@ export default function Dashboard() {
               </div>
               <div className="max-h-96 overflow-y-auto space-y-3 pr-2">
                 {emergencyRecords.length > 0 ? (
-                  emergencyRecords.map((record, index) => (
-                    <div key={record.id || index} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
-                      <div className="flex-shrink-0">
-                        <div className={`w-2 h-2 rounded-full mt-2 ${
-                          record.severity === 'critical' ? 'bg-purple-500' :
-                          record.severity === 'high' ? 'bg-red-500' :
-                          record.severity === 'medium' ? 'bg-yellow-500' :
-                          'bg-blue-500'
-                        }`}></div>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-medium text-gray-900 truncate">
-                            {record.title}
-                          </h4>
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            record.status === 'active' ? 'bg-red-100 text-red-800' :
-                            record.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
-                            record.status === 'completed' ? 'bg-green-100 text-green-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {record.status === 'active' ? '진행중' :
-                            record.status === 'in_progress' ? '처리중' :
-                            record.status === 'completed' ? '완료' : '취소'}
-                          </span>
+                  emergencyRecords.map((record, index) => {
+                    const isActive = record.status === 'active' || record.status === 'in_progress';
+                    const completedSteps = record.executions.filter(exec => exec.status === 'completed').length;
+                    const totalSteps = record.executions.length;
+                    
+                    return (
+                      <div 
+                        key={record.id || index} 
+                        className={`flex items-start space-x-3 p-3 rounded-lg transition-colors ${
+                          isActive 
+                            ? 'bg-gray-50 hover:bg-gray-100 cursor-pointer border-l-4 border-red-500' 
+                            : 'bg-gray-50'
+                        }`}
+                        onClick={isActive ? () => handleContinueEmergency(record) : undefined}
+                      >
+                        <div className="flex-shrink-0">
+                          <div className={`w-2 h-2 rounded-full mt-2 ${
+                            record.severity === 'critical' ? 'bg-purple-500' :
+                            record.severity === 'high' ? 'bg-red-500' :
+                            record.severity === 'medium' ? 'bg-yellow-500' :
+                            'bg-blue-500'
+                          }`}></div>
                         </div>
-                        <p className="text-xs text-gray-600 mt-1">
-                          {record.type === 'lpg_gas_leak' ? 'LPG 가스 누출' :
-                          record.type === 'safety_equipment' ? '안전장구 미착용' :
-                          record.type === 'crane_worker' ? '크레인 반경 내 작업자' :
-                          record.type === 'lpg_explosion' ? 'LPG 폭발 감지' : record.type}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {new Date(record.startedAt).toLocaleString('ko-KR')}
-                        </p>
-                        <div className="flex items-center justify-between mt-2">
-                          <span className="text-xs text-gray-500">
-                            완료: {record.executions.filter(exec => exec.status === 'completed').length}/{record.executions.length}단계
-                          </span>
-                          <button
-                            onClick={() => router.push(`/emergency/records/${record.id}`)}
-                            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
-                          >
-                            <Eye className="w-3 h-3" />
-                            상세보기
-                          </button>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <h4 className={`text-sm font-medium truncate ${
+                              isActive ? 'text-red-900' : 'text-gray-900'
+                            }`}>
+                              {record.title}
+                              {isActive && (
+                                <span className="ml-2 text-xs text-red-600 font-normal">
+                                  (클릭하여 계속 진행)
+                                </span>
+                              )}
+                            </h4>
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              record.status === 'active' ? 'bg-red-100 text-red-800' :
+                              record.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                              record.status === 'completed' ? 'bg-green-100 text-green-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {record.status === 'active' ? '진행중' :
+                               record.status === 'in_progress' ? '처리중' :
+                               record.status === 'completed' ? '완료' : '취소'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-600 mt-1">
+                            {record.type === 'lpg_gas_leak' ? 'LPG 가스 누출' :
+                             record.type === 'safety_equipment' ? '안전장구 미착용' :
+                             record.type === 'crane_worker' ? '크레인 반경 내 작업자' :
+                             record.type === 'lpg_explosion' ? 'LPG 폭발 감지' : record.type}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {new Date(record.startedAt).toLocaleString('ko-KR')}
+                          </p>
+                          <div className="flex items-center justify-between mt-2">
+                            <span className="text-xs text-gray-500">
+                              완료: {completedSteps}/{totalSteps}단계
+                            </span>
+                            {!isActive && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  router.push(`/emergency/records/${record.id}`);
+                                }}
+                                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                              >
+                                <Eye className="w-3 h-3" />
+                                상세보기
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="text-center py-8 text-gray-500">
                     <History className="w-12 h-12 mx-auto mb-4 text-gray-300" />

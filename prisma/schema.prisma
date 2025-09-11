@@ -279,3 +279,21 @@ model EmergencyStepExecution {
 
   @@map("emergency_step_executions")
 }
+
+// 비상사태대비및대응 PDF 파일 관리
+model EmergencyPDF {
+  id          Int      @id @default(autoincrement())
+  fileName    String   @map("file_name")
+  originalName String  @map("original_name")
+  filePath    String   @map("file_path")
+  fileSize    Int      @map("file_size")
+  mimeType    String   @map("mime_type")
+  description String?  // 파일 설명
+  version     String   @default("1.0") // 버전 정보
+  isActive    Boolean  @default(true) @map("is_active") // 활성 파일 여부
+  uploadedBy  String   @map("uploaded_by") // 업로드한 사용자
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("emergency_pdfs")
+}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Eye, AlertTriangle, ExternalLink } from 'lucide-react';
+import { Plus, Edit, Trash2, Eye, AlertTriangle, ExternalLink, Upload, Download, FileText, X } from 'lucide-react';
 import Link from 'next/link';
 
 interface EmergencySOP {
@@ -24,16 +24,20 @@ interface EmergencySOPStep {
   isRequired: boolean;
 }
 
-interface EmergencyIncident {
+
+interface EmergencyPDF {
   id: number;
-  type: string;
-  title: string;
+  fileName: string;
+  originalName: string;
+  filePath: string;
+  fileSize: number;
+  mimeType: string;
   description?: string;
-  location?: string;
-  severity: string;
-  status: string;
-  startedAt: string;
-  completedAt?: string;
+  version: string;
+  isActive: boolean;
+  uploadedBy: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 const EMERGENCY_TYPES = {
@@ -50,23 +54,26 @@ const SEVERITY_LEVELS = {
   critical: '치명적'
 };
 
-const STATUS_LEVELS = {
-  active: '활성',
-  in_progress: '진행중',
-  completed: '완료',
-  cancelled: '취소'
-};
 
 export default function EmergencyManagement() {
-  const [activeTab, setActiveTab] = useState<'sops' | 'incidents'>('sops');
+  const [activeTab, setActiveTab] = useState<'sops' | 'pdfs'>('sops');
   const [sops, setSops] = useState<EmergencySOP[]>([]);
-  const [incidents, setIncidents] = useState<EmergencyIncident[]>([]);
+  const [pdfs, setPdfs] = useState<EmergencyPDF[]>([]);
   const [loading, setLoading] = useState(true);
   const [showSOPModal, setShowSOPModal] = useState(false);
   const [showStepModal, setShowStepModal] = useState(false);
   const [editingSOP, setEditingSOP] = useState<EmergencySOP | null>(null);
   const [editingStep, setEditingStep] = useState<EmergencySOPStep | null>(null);
   const [selectedSOPId, setSelectedSOPId] = useState<number | null>(null);
+  
+  // PDF 관련 상태
+  const [showPDFUploadModal, setShowPDFUploadModal] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadForm, setUploadForm] = useState({
+    description: '',
+    uploadedBy: '관리자'
+  });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   // SOP 폼 데이터
   const [sopForm, setSopForm] = useState({
@@ -87,7 +94,7 @@ export default function EmergencyManagement() {
 
   useEffect(() => {
     fetchSOPs();
-    fetchIncidents();
+    fetchPDFs();
   }, []);
 
   const fetchSOPs = async () => {
@@ -102,14 +109,116 @@ export default function EmergencyManagement() {
     }
   };
 
-  const fetchIncidents = async () => {
+
+  const fetchPDFs = async () => {
     try {
-      const response = await fetch('/api/emergency/incidents');
+      const response = await fetch('/api/emergency/pdfs');
       const data = await response.json();
-      setIncidents(data.data || []);
+      setPdfs(data.data || []);
     } catch (error) {
-      console.error('비상 상황 조회 실패:', error);
+      console.error('PDF 목록 조회 실패:', error);
     }
+  };
+
+  const handlePDFUpload = async () => {
+    if (!selectedFile) {
+      alert('PDF 파일을 선택해주세요.');
+      return;
+    }
+    
+    if (selectedFile.type !== 'application/pdf') {
+      alert('PDF 파일만 업로드 가능합니다.');
+      return;
+    }
+    
+    if (selectedFile.size > 10 * 1024 * 1024) {
+      alert('파일 크기는 10MB를 초과할 수 없습니다.');
+      return;
+    }
+
+    try {
+      setUploading(true);
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('description', uploadForm.description);
+      formData.append('uploadedBy', uploadForm.uploadedBy);
+
+      const response = await fetch('/api/emergency/pdfs', {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        alert('PDF 파일이 성공적으로 업로드되었습니다.');
+        setShowPDFUploadModal(false);
+        setUploadForm({ description: '', uploadedBy: '관리자' });
+        setSelectedFile(null);
+        fetchPDFs();
+      } else {
+        alert(result.error || 'PDF 업로드에 실패했습니다.');
+      }
+    } catch (error) {
+      console.error('PDF 업로드 실패:', error);
+      alert('PDF 업로드 중 오류가 발생했습니다.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handlePDFDelete = async (id: number) => {
+    if (!confirm('정말로 이 PDF 파일을 삭제하시겠습니까?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/emergency/pdfs/${id}`, {
+        method: 'DELETE'
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        alert('PDF 파일이 성공적으로 삭제되었습니다.');
+        fetchPDFs();
+      } else {
+        alert(result.error || 'PDF 삭제에 실패했습니다.');
+      }
+    } catch (error) {
+      console.error('PDF 삭제 실패:', error);
+      alert('PDF 삭제 중 오류가 발생했습니다.');
+    }
+  };
+
+  const handlePDFToggleActive = async (id: number, isActive: boolean) => {
+    try {
+      const response = await fetch(`/api/emergency/pdfs/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive })
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        alert(result.message);
+        fetchPDFs();
+      } else {
+        alert(result.error || 'PDF 상태 변경에 실패했습니다.');
+      }
+    } catch (error) {
+      console.error('PDF 상태 변경 실패:', error);
+      alert('PDF 상태 변경 중 오류가 발생했습니다.');
+    }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   const handleCreateSOP = async () => {
@@ -198,7 +307,7 @@ export default function EmergencyManagement() {
     <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">비상 상황 관리</h1>
-        <p className="text-gray-600">비상 상황 SOP 및 발생 기록을 관리합니다.</p>
+        <p className="text-gray-600">비상 상황 SOP 및 PDF 파일을 관리합니다.</p>
       </div>
 
       {/* 탭 메뉴 */}
@@ -214,6 +323,16 @@ export default function EmergencyManagement() {
               }`}
             >
               SOP 관리
+            </button>
+            <button
+              onClick={() => setActiveTab('pdfs')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'pdfs'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              PDF 관리
             </button>
           </nav>
         </div>
@@ -331,6 +450,121 @@ export default function EmergencyManagement() {
         </div>
       )}
 
+
+      {/* PDF 관리 탭 */}
+      {activeTab === 'pdfs' && (
+        <div>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold">비상사태대비및대응 PDF 관리</h2>
+            <button
+              onClick={() => setShowPDFUploadModal(true)}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+            >
+              <Upload className="w-4 h-4" />
+              PDF 업로드
+            </button>
+          </div>
+          
+          {/* 최신 PDF 다운로드 버튼 */}
+          {pdfs.length > 0 && (
+            <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-medium text-blue-900">최신 PDF 파일</h3>
+                  <p className="text-sm text-blue-700">
+                    {pdfs[0].originalName} ({formatFileSize(pdfs[0].fileSize)})
+                  </p>
+                </div>
+                <a
+                  href={pdfs[0].filePath}
+                  download={pdfs[0].originalName}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  다운로드
+                </a>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">파일명</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">크기</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">업로드자</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">업로드일</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">액션</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {pdfs.map((pdf) => (
+                  <tr key={pdf.id}>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <FileText className="w-5 h-5 text-red-500 mr-2" />
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">{pdf.originalName}</div>
+                          {pdf.description && (
+                            <div className="text-sm text-gray-500">{pdf.description}</div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {formatFileSize(pdf.fileSize)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                        pdf.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {pdf.isActive ? '활성' : '비활성'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {pdf.uploadedBy}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {new Date(pdf.createdAt).toLocaleString('ko-KR')}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                      <a
+                        href={pdf.filePath}
+                        download={pdf.originalName}
+                        className="text-blue-600 hover:text-blue-900"
+                      >
+                        다운로드
+                      </a>
+                      <button
+                        onClick={() => handlePDFToggleActive(pdf.id, !pdf.isActive)}
+                        className={`${
+                          pdf.isActive ? 'text-yellow-600 hover:text-yellow-900' : 'text-green-600 hover:text-green-900'
+                        }`}
+                      >
+                        {pdf.isActive ? '비활성화' : '활성화'}
+                      </button>
+                      <button
+                        onClick={() => handlePDFDelete(pdf.id)}
+                        className="text-red-600 hover:text-red-900"
+                      >
+                        삭제
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {pdfs.length === 0 && (
+              <div className="text-center py-8 text-gray-500">
+                <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                <p>업로드된 PDF 파일이 없습니다.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* SOP 생성 모달 */}
       {showSOPModal && (
@@ -470,6 +704,94 @@ export default function EmergencyManagement() {
                 추가
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* PDF 업로드 모달 */}
+      {showPDFUploadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-96">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">PDF 파일 업로드</h3>
+              <button
+                onClick={() => setShowPDFUploadModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">PDF 파일</label>
+                <input
+                  type="file"
+                  accept=".pdf"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    setSelectedFile(file);
+                  }}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  disabled={uploading}
+                />
+                {selectedFile && (
+                  <p className="text-sm text-green-600 mt-1">
+                    선택된 파일: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)}MB)
+                  </p>
+                )}
+                <p className="text-xs text-gray-500 mt-1">PDF 파일만 업로드 가능합니다. (최대 10MB)</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">설명 (선택사항)</label>
+                <textarea
+                  value={uploadForm.description}
+                  onChange={(e) => setUploadForm({ ...uploadForm, description: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  rows={3}
+                  placeholder="PDF 파일에 대한 설명을 입력하세요"
+                  disabled={uploading}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">업로드자</label>
+                <input
+                  type="text"
+                  value={uploadForm.uploadedBy}
+                  onChange={(e) => setUploadForm({ ...uploadForm, uploadedBy: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  placeholder="업로드자 이름"
+                  disabled={uploading}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end space-x-2 mt-6">
+              <button
+                onClick={() => {
+                  setShowPDFUploadModal(false);
+                  setSelectedFile(null);
+                  setUploadForm({ description: '', uploadedBy: '관리자' });
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300"
+                disabled={uploading}
+              >
+                취소
+              </button>
+              <button
+                onClick={handlePDFUpload}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400"
+                disabled={uploading || !selectedFile}
+              >
+                {uploading ? '업로드 중...' : '업로드'}
+              </button>
+            </div>
+            {uploading && (
+              <div className="mt-4 text-center">
+                <div className="inline-flex items-center px-4 py-2 bg-blue-100 text-blue-800 rounded-lg">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-800 mr-2"></div>
+                  업로드 중...
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

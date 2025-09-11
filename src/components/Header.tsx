@@ -25,6 +25,16 @@ export default function Header({
     port?: number;
   }>({ connected: false, status: 'disconnected' });
   const [mqttLoading, setMqttLoading] = useState(false);
+  
+  // 날씨 정보 상태
+  const [weatherInfo, setWeatherInfo] = useState<{
+    temperature: number;
+    description: string;
+    emoji: string;
+    humidity: number;
+    windSpeed: number;
+    location: string;
+  } | null>(null);
 
   useEffect(() => {
     const updateTime = () => {
@@ -48,6 +58,30 @@ export default function Header({
     const interval = setInterval(updateTime, 1000);
 
     return () => clearInterval(interval);
+  }, []);
+
+  // 날씨 정보 가져오기
+  const fetchWeatherInfo = async () => {
+    try {
+      const response = await fetch('/api/weather');
+      const result = await response.json();
+      
+      if (result.success) {
+        setWeatherInfo(result.data);
+      }
+    } catch (err) {
+      console.error('날씨 정보를 가져오는 중 오류가 발생했습니다:', err);
+    }
+  };
+
+  // 날씨 정보 초기 로드 및 주기적 업데이트
+  useEffect(() => {
+    fetchWeatherInfo();
+    
+    // 10분마다 날씨 정보 업데이트
+    const weatherInterval = setInterval(fetchWeatherInfo, 600000);
+    
+    return () => clearInterval(weatherInterval);
   }, []);
 
   // MQTT 상태 확인
@@ -124,8 +158,16 @@ export default function Header({
           <div className="text-gray-600">
             {formattedDate}
           </div>
-          <div className="text-gray-600">
-            현재 온도: {temperature}
+          <div className="flex items-center space-x-2 text-gray-600">
+            <span className="text-lg">
+              {weatherInfo ? weatherInfo.emoji : '🌤️'}
+            </span>
+            <span>
+              {weatherInfo ? `${weatherInfo.temperature}°C` : temperature}
+            </span>
+            <span className="text-sm text-gray-500">
+              {weatherInfo ? weatherInfo.description : '로딩 중...'}
+            </span>
           </div>
         </div>
         
