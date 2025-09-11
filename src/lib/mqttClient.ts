@@ -22,15 +22,42 @@ let mqttClient: mqtt.MqttClient | null = null;
 export { mqttClient };
 
 // 비콘 명령 전송 함수
-export async function sendBeaconCommand(beaconId: string, command: any): Promise<boolean> {
+export async function sendBeaconCommand(beaconId: string, command: any, gatewayId?: string): Promise<boolean> {
   if (!mqttClient || !mqttClient.connected) {
     console.error('MQTT 클라이언트가 연결되지 않았습니다.');
     return false;
   }
 
   try {
-    // Gateway의 subaction topic으로 명령 전송 (KBeacon configuration message용)
-    const subactionTopic = 'safety/beacon/gateway_1/subaction';
+    // Gateway 정보 조회 (gatewayId가 제공되지 않은 경우 비콘으로부터 조회)
+    let targetGateway;
+    if (gatewayId) {
+      targetGateway = await prisma.gateway.findUnique({
+        where: { gatewayId: gatewayId },
+        select: { mqttTopic: true, gatewayId: true }
+      });
+    } else {
+      // 비콘의 Gateway 정보 조회
+      const beacon = await prisma.beacon.findUnique({
+        where: { beaconId: beaconId },
+        select: { gatewayId: true }
+      });
+      
+      if (beacon?.gatewayId) {
+        targetGateway = await prisma.gateway.findUnique({
+          where: { gatewayId: beacon.gatewayId },
+          select: { mqttTopic: true, gatewayId: true }
+        });
+      }
+    }
+
+    if (!targetGateway || !targetGateway.mqttTopic) {
+      console.error(`Gateway 정보를 찾을 수 없습니다: ${gatewayId || beaconId}`);
+      return false;
+    }
+
+    // Gateway별 동적 subaction topic 생성
+    const subactionTopic = `${targetGateway.mqttTopic}/subaction`;
     
     // KBeacon 문서에 따른 올바른 메시지 형식 구성
     const gatewayMessage = {
@@ -48,13 +75,13 @@ export async function sendBeaconCommand(beaconId: string, command: any): Promise
       }
     };
     
-    console.log(`📤 비콘 명령 전송: ${beaconId}`, gatewayMessage);
+    console.log(`📤 비콘 명령 전송: ${beaconId} → ${targetGateway.gatewayId} (${subactionTopic})`, gatewayMessage);
     
     mqttClient.publish(subactionTopic, JSON.stringify(gatewayMessage), (error) => {
       if (error) {
         console.error(`비콘 명령 전송 실패: ${beaconId}`, error);
       } else {
-        console.log(`✅ 비콘 명령 전송 성공: ${beaconId}`);
+        console.log(`✅ 비콘 명령 전송 성공: ${beaconId} → ${targetGateway.gatewayId}`);
       }
     });
 

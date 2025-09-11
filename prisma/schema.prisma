@@ -95,11 +95,13 @@ model Beacon {
   minor       Int
   txPower     Int      @map("tx_power")
   location    String?
+  gatewayId   String   @map("gateway_id")
   status      String   @default("active")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   // Relations
+  gateway     Gateway  @relation(fields: [gatewayId], references: [gatewayId])
   proximityAlerts ProximityAlert[]
   rssiCalibrations RssiCalibration[]
 
@@ -111,13 +113,14 @@ model Gateway {
   gatewayId   String   @unique @map("gateway_id")
   name        String
   location    String
-  ipAddress   String   @map("ip_address")
-  mqttTopic   String   @map("mqtt_topic")
+  ipAddress   String?  @map("ip_address")
+  mqttTopic   String?  @map("mqtt_topic")
   status      String   @default("active")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   // Relations
+  beacons Beacon[]
   proximityAlerts ProximityAlert[]
   rssiCalibrations RssiCalibration[]
 
@@ -177,4 +180,102 @@ model LogRetentionPolicy {
 
   @@unique([logType, severity])
   @@map("log_retention_policies")
+}
+
+model SurveillanceRecord {
+  id          Int      @id @default(autoincrement())
+  type        String   // "safety_equipment", "fire_explosion", "gas_leak"
+  title       String   // 알람 제목
+  message     String   // 상세 메시지
+  location    String   // 감지 위치 (예: "A동 4번 센서", "LPG 저장소", "작업장 내 LPG 배관")
+  severity    String   @default("warning") // "info", "warning", "danger", "critical"
+  status      String   @default("active") // "active", "resolved", "acknowledged"
+  source      String   @default("cctv") // "cctv", "sensor", "manual"
+  metadata    String?  // JSON 형태의 추가 정보
+  resolvedAt  DateTime? @map("resolved_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([createdAt])
+  @@index([type])
+  @@index([severity])
+  @@index([status])
+  @@map("surveillance_records")
+}
+
+// 비상 상황 SOP (Standard Operating Procedure)
+model EmergencySOP {
+  id          Int      @id @default(autoincrement())
+  type        String   // "lpg_gas_leak", "safety_equipment", "crane_worker", "lpg_explosion"
+  name        String   // SOP 이름
+  description String?  // SOP 설명
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  steps       EmergencySOPStep[]
+  incidents   EmergencyIncident[]
+
+  @@map("emergency_sops")
+}
+
+// 비상 상황 SOP 단계
+model EmergencySOPStep {
+  id          Int      @id @default(autoincrement())
+  sopId       Int      @map("sop_id")
+  stepNumber  Int      @map("step_number")
+  title       String   // 단계 제목
+  description String   // 단계 설명
+  action      String?  // 취해야 할 조치
+  isRequired  Boolean  @default(true) @map("is_required")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  sop         EmergencySOP @relation(fields: [sopId], references: [id], onDelete: Cascade)
+  executions  EmergencyStepExecution[]
+
+  @@map("emergency_sop_steps")
+}
+
+// 비상 상황 발생 기록
+model EmergencyIncident {
+  id          Int      @id @default(autoincrement())
+  sopId       Int      @map("sop_id")
+  type        String   // 비상 상황 유형
+  title       String   // 상황 제목
+  description String?  // 상황 설명
+  location    String?  // 발생 위치
+  severity    String   @default("high") // "low", "medium", "high", "critical"
+  status      String   @default("active") // "active", "in_progress", "completed", "cancelled"
+  startedAt   DateTime @default(now()) @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  sop         EmergencySOP @relation(fields: [sopId], references: [id])
+  executions  EmergencyStepExecution[]
+
+  @@map("emergency_incidents")
+}
+
+// 비상 상황 단계별 실행 기록
+model EmergencyStepExecution {
+  id          Int      @id @default(autoincrement())
+  incidentId  Int      @map("incident_id")
+  stepId      Int      @map("step_id")
+  stepNumber  Int      @map("step_number")
+  status      String   @default("pending") // "pending", "completed", "skipped"
+  executedAt  DateTime? @map("executed_at")
+  notes       String?  // 실행 노트
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  incident    EmergencyIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  step        EmergencySOPStep @relation(fields: [stepId], references: [id])
+
+  @@map("emergency_step_executions")
 }

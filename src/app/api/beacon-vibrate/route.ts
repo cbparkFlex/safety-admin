@@ -39,16 +39,21 @@ export async function POST(request: NextRequest) {
     }
 
     // 비콘의 Gateway 정보 조회
-    const gateway = await prisma.gateway.findFirst({
-      where: { status: 'active' }
+    const beaconWithGateway = await prisma.beacon.findUnique({
+      where: { beaconId: beaconId },
+      include: {
+        gateway: true
+      }
     });
 
-    if (!gateway) {
+    if (!beaconWithGateway?.gateway) {
       return NextResponse.json({
-        message: "활성 Gateway를 찾을 수 없습니다",
-        error: "NO_ACTIVE_GATEWAY"
+        message: "비콘에 연결된 Gateway를 찾을 수 없습니다",
+        error: "NO_GATEWAY_FOR_BEACON"
       }, { status: 404 });
     }
+
+    const gateway = beaconWithGateway.gateway;
 
     // KBeacon Ring 명령 구성 (문서에 따른 5개 파라미터)
     const ringCommand = {
@@ -64,7 +69,7 @@ export async function POST(request: NextRequest) {
     console.log(`📳 비콘 진동 명령 전송: ${beaconId}`, ringCommand);
 
     // MQTT를 통해 Gateway로 비콘 명령 전송
-    const commandSent = await sendBeaconCommand(beaconId, ringCommand);
+    const commandSent = await sendBeaconCommand(beaconId, ringCommand, gateway.gatewayId);
     
     if (!commandSent) {
       return NextResponse.json({

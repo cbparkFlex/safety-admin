@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Users, Bell, TrendingUp, TrendingDown, Clock, Wrench, Mountain, AlertTriangle } from 'lucide-react';
+import { Users, Bell, TrendingUp, TrendingDown, Clock, Wrench, Mountain, AlertTriangle, History, Eye } from 'lucide-react';
+import EmergencyPopup from './EmergencyPopup';
+import { useRouter } from 'next/navigation';
 
 interface DetectionEvent {
   time: string;
@@ -26,7 +28,35 @@ interface AlertMessage {
   isActive: boolean;
 }
 
+interface EmergencyRecord {
+  id: number;
+  type: string;
+  title: string;
+  description: string;
+  location: string;
+  severity: string;
+  status: string;
+  startedAt: string;
+  completedAt?: string;
+  sop: {
+    name: string;
+    type: string;
+  };
+  executions: Array<{
+    id: number;
+    stepNumber: number;
+    status: string;
+    executedAt?: string;
+    notes?: string;
+    step: {
+      title: string;
+      stepNumber: number;
+    };
+  }>;
+}
+
 export default function Dashboard() {
+  const router = useRouter();
   const [currentTime, setCurrentTime] = useState('');
   const [attendanceWorkers, setAttendanceWorkers] = useState<AttendanceWorker[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,12 +64,22 @@ export default function Dashboard() {
   const [alertMessages, setAlertMessages] = useState<AlertMessage[]>([]);
   const [audioEnabled, setAudioEnabled] = useState(true); // 오디오 활성화 상태
   
-  const [detectionEvents] = useState<DetectionEvent[]>([
-    { time: '08:32', message: 'A동 4번 센서 \'주의\' 단계 감지' },
-    { time: '08:32', message: 'B동 6번 센서 정상화' },
-    { time: '08:32', message: '헬멧 미착용 알림 해제' },
-    { time: '08:32', message: 'A동 4번 센서 정상화' },
-  ]);
+  const [surveillanceRecords, setSurveillanceRecords] = useState<any[]>([]);
+  const [gasSensors, setGasSensors] = useState<any[]>([]);
+  const [gasSensorStats, setGasSensorStats] = useState({
+    total: 0,
+    safe: 0,
+    warning: 0,
+    danger: 0,
+    critical: 0,
+  });
+
+  // 비상 상황 관련 상태
+  const [activeEmergency, setActiveEmergency] = useState<any>(null);
+  const [showEmergencyPopup, setShowEmergencyPopup] = useState(false);
+  
+  // 비상상황 기록 상태
+  const [emergencyRecords, setEmergencyRecords] = useState<EmergencyRecord[]>([]);
 
   // 알림 메시지 추가 함수
   const addAlertMessage = (alert: Omit<AlertMessage, 'id' | 'timestamp'>) => {
@@ -59,6 +99,122 @@ export default function Dashboard() {
   // 알림 메시지 제거 함수
   const removeAlertMessage = (id: string) => {
     setAlertMessages(prev => prev.filter(alert => alert.id !== id));
+  };
+
+  // 비상 상황 처리 함수들
+  const handleEmergencyProtocol = async (type: string) => {
+    try {
+      // 먼저 해당 상황에 맞는 알림 생성
+      const alertType = getAlertTypeForEmergency(type);
+      addAlertMessage({
+        type: alertType,
+        title: getEmergencyTitle(type),
+        message: getEmergencyDescription(type),
+        isActive: true
+      });
+
+      // 해당 유형의 SOP 조회
+      const sopResponse = await fetch(`/api/emergency/sops?type=${type}`);
+      const sopData = await sopResponse.json();
+      
+      if (sopData.success && sopData.data.length > 0) {
+        const sop = sopData.data[0]; // 첫 번째 활성 SOP 사용
+        
+        // 비상 상황 기록 생성
+        const incidentResponse = await fetch('/api/emergency/incidents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sopId: sop.id,
+            type: type,
+            title: getEmergencyTitle(type),
+            description: getEmergencyDescription(type),
+            location: '작업장',
+            severity: getSeverityForEmergency(type)
+          })
+        });
+
+        if (incidentResponse.ok) {
+          const incidentData = await incidentResponse.json();
+          setActiveEmergency(incidentData.data.incident);
+          setShowEmergencyPopup(true);
+        }
+      }
+    } catch (error) {
+      console.error('비상 상황 처리 실패:', error);
+    }
+  };
+
+  const getAlertTypeForEmergency = (type: string) => {
+    const alertTypes = {
+      lpg_gas_leak: 'danger',
+      safety_equipment: 'warning',
+      crane_worker: 'warning',
+      lpg_explosion: 'danger'
+    };
+    return alertTypes[type as keyof typeof alertTypes] || 'danger';
+  };
+
+  const getSeverityForEmergency = (type: string) => {
+    const severities = {
+      lpg_gas_leak: 'high',
+      safety_equipment: 'medium',
+      crane_worker: 'medium',
+      lpg_explosion: 'critical'
+    };
+    return severities[type as keyof typeof severities] || 'high';
+  };
+
+  const getEmergencyTitle = (type: string) => {
+    const titles = {
+      lpg_gas_leak: 'LPG 가스 누출 감지',
+      safety_equipment: '안전장구 미착용 감지',
+      crane_worker: '크레인 작업 반경 침입',
+      lpg_explosion: 'LPG 폭발 위험 감지'
+    };
+    return titles[type as keyof typeof titles] || '비상 상황 발생';
+  };
+
+  const getEmergencyDescription = (type: string) => {
+    const descriptions = {
+      lpg_gas_leak: 'LPG 센서에서 가스 누출이 감지되었습니다.',
+      safety_equipment: '작업자가 안전장구를 착용하지 않은 상태로 감지되었습니다.',
+      crane_worker: '크레인 작업 반경 내에 작업자가 진입했습니다.',
+      lpg_explosion: 'CCTV에서 LPG 저장소 주변에 폭발 위험이 감지되었습니다.'
+    };
+    return descriptions[type as keyof typeof descriptions] || '비상 상황이 발생했습니다.';
+  };
+
+  const handleEmergencyComplete = async (incidentId?: number) => {
+    if (incidentId) {
+      // 비상 상황 완료 시
+      setActiveEmergency(null);
+      setShowEmergencyPopup(false);
+      // 완료된 비상 상황에 대한 알림 추가
+      addAlertMessage({
+        type: 'info',
+        title: '비상 상황 완료',
+        message: '비상 상황이 성공적으로 처리되었습니다.',
+        isActive: true
+      });
+      // 비상상황 기록 새로고침
+      fetchEmergencyRecords();
+    } else {
+      // 단계 완료 시 - 현재 비상 상황 데이터 새로고침
+      if (activeEmergency) {
+        try {
+          const response = await fetch(`/api/emergency/incidents/${activeEmergency.id}`);
+          if (response.ok) {
+            const data = await response.json();
+            setActiveEmergency(data.data);
+          }
+        } catch (error) {
+          console.error('비상 상황 데이터 새로고침 실패:', error);
+        }
+      }
+      // 비상상황 기록도 새로고침
+      fetchEmergencyRecords();
+    }
   };
 
   // 알림 메시지 비활성화 함수
@@ -89,6 +245,48 @@ export default function Dashboard() {
     }
   };
 
+  // 감시 기록 데이터 가져오기
+  const fetchSurveillanceRecords = async () => {
+    try {
+      const response = await fetch('/api/surveillance-records?limit=5');
+      const result = await response.json();
+      
+      if (result.success) {
+        setSurveillanceRecords(result.data);
+      }
+    } catch (err) {
+      console.error('감시 기록 데이터를 가져오는 중 오류가 발생했습니다:', err);
+    }
+  };
+
+  // 가스 센서 데이터 가져오기
+  const fetchGasSensors = async () => {
+    try {
+      const response = await fetch('/api/gas-sensors');
+      const result = await response.json();
+      
+      if (result.success) {
+        setGasSensors(result.data);
+        setGasSensorStats(result.stats);
+      }
+    } catch (err) {
+      console.error('가스 센서 데이터를 가져오는 중 오류가 발생했습니다:', err);
+    }
+  };
+
+  const fetchEmergencyRecords = async () => {
+    try {
+      const response = await fetch('/api/emergency/incidents?limit=5');
+      const result = await response.json();
+      
+      if (result.success) {
+        setEmergencyRecords(result.data);
+      }
+    } catch (err) {
+      console.error('비상상황 기록 데이터를 가져오는 중 오류가 발생했습니다:', err);
+    }
+  };
+
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
@@ -109,6 +307,17 @@ export default function Dashboard() {
     
     // 출근 작업자 데이터 가져오기
     fetchAttendanceWorkers();
+    // 감시 기록 데이터 가져오기
+    fetchSurveillanceRecords();
+    // 가스 센서 데이터 가져오기
+    fetchGasSensors();
+    // 비상상황 기록 데이터 가져오기
+    fetchEmergencyRecords();
+
+    // 가스 센서 데이터 실시간 업데이트 (5초마다)
+    const gasSensorInterval = setInterval(() => {
+      fetchGasSensors();
+    }, 5000);
 
     // 시뮬레이션: 가스 누출 감지 알림 추가
     const alertInterval = setInterval(() => {
@@ -159,6 +368,7 @@ export default function Dashboard() {
       clearInterval(interval);
       clearInterval(alertInterval);
       clearInterval(normalInterval);
+      clearInterval(gasSensorInterval);
     };
   }, []);
 
@@ -223,53 +433,132 @@ export default function Dashboard() {
     <div className="space-y-6">
       {/* 테스트 버튼 (개발용) */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="text-lg font-semibold text-blue-800 mb-3">🧪 테스트 도구</h3>
-        <div className="flex space-x-2 mb-3">
-          <button 
-            onClick={() => createTestAlert('danger')}
-            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
-          >
-            위험 알림 생성
-          </button>
-          <button 
-            onClick={() => createTestAlert('warning')}
-            className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors"
-          >
-            주의 알림 생성
-          </button>
-          <button 
-            onClick={() => createTestAlert('info')}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            정상화 알림 생성
-          </button>
-          <button 
-            onClick={() => setAlertMessages([])}
-            className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
-          >
-            모든 알림 제거
-          </button>
-        </div>
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-700">🔊 오디오 알림:</span>
+        <h3 className="text-lg font-semibold text-blue-800 mb-3">🧪 비상 상황 테스트 도구</h3>
+        
+        {/* 비상 상황별 테스트 버튼 */}
+        <div className="mb-4">
+          <h4 className="text-md font-medium text-blue-700 mb-2">비상 상황 SOP 테스트</h4>
+          <p className="text-xs text-gray-600 mb-3">각 버튼을 클릭하면 해당 비상 상황의 SOP 팝업이 실행됩니다.</p>
+          <div className="grid grid-cols-2 gap-3">
             <button 
-              onClick={() => setAudioEnabled(!audioEnabled)}
-              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                audioEnabled 
-                  ? 'bg-green-600 text-white hover:bg-green-700' 
-                  : 'bg-gray-400 text-white hover:bg-gray-500'
-              }`}
+              onClick={() => handleEmergencyProtocol('lpg_gas_leak')}
+              className="bg-red-600 text-white px-4 py-3 rounded-lg hover:bg-red-700 transition-colors text-sm flex flex-col items-center group relative"
+              title="LPG 센서에서 가스 누출이 감지되었을 때의 대응 절차를 테스트합니다."
             >
-              {audioEnabled ? '켜짐' : '꺼짐'}
+              <span className="font-semibold">🚨 LPG 가스 누출</span>
+              <span className="text-xs opacity-90">5단계 SOP</span>
+              <span className="text-xs opacity-75 mt-1">즉시 작업 중단 → 가스 차단 → 환기 → 신고 → 안전 확인</span>
+            </button>
+            <button 
+              onClick={() => handleEmergencyProtocol('safety_equipment')}
+              className="bg-orange-600 text-white px-4 py-3 rounded-lg hover:bg-orange-700 transition-colors text-sm flex flex-col items-center group relative"
+              title="작업자가 안전장구를 착용하지 않은 상태로 감지되었을 때의 대응 절차를 테스트합니다."
+            >
+              <span className="font-semibold">⚠️ 안전장구 미착용</span>
+              <span className="text-xs opacity-90">4단계 SOP</span>
+              <span className="text-xs opacity-75 mt-1">작업 중단 → 안전장구 착용 → 교육 → 작업 재개</span>
+            </button>
+            <button 
+              onClick={() => handleEmergencyProtocol('crane_worker')}
+              className="bg-yellow-600 text-white px-4 py-3 rounded-lg hover:bg-yellow-700 transition-colors text-sm flex flex-col items-center group relative"
+              title="크레인 작업 반경 내에 작업자가 진입했을 때의 대응 절차를 테스트합니다."
+            >
+              <span className="font-semibold">🏗️ 크레인 반경 침입</span>
+              <span className="text-xs opacity-90">4단계 SOP</span>
+              <span className="text-xs opacity-75 mt-1">크레인 중단 → 작업자 대피 → 안전 확인 → 작업 재개</span>
+            </button>
+            <button 
+              onClick={() => handleEmergencyProtocol('lpg_explosion')}
+              className="bg-red-800 text-white px-4 py-3 rounded-lg hover:bg-red-900 transition-colors text-sm flex flex-col items-center group relative"
+              title="CCTV에서 LPG 저장소 주변에 폭발 위험이 감지되었을 때의 대응 절차를 테스트합니다."
+            >
+              <span className="font-semibold">💥 LPG 폭발 위험</span>
+              <span className="text-xs opacity-90">5단계 SOP</span>
+              <span className="text-xs opacity-75 mt-1">전체 대피 → 긴급 신고 → 가스 차단 → 전기 차단 → 전문가 대기</span>
             </button>
           </div>
-          <button 
-            onClick={() => playAlertSound('danger')}
-            className="bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700 transition-colors"
-          >
-            🔊 소리 테스트
-          </button>
+        </div>
+
+        {/* 기존 알림 테스트 버튼 */}
+        <div className="mb-3">
+          <h4 className="text-md font-medium text-blue-700 mb-2">일반 알림 테스트</h4>
+          <div className="flex space-x-2">
+            <button 
+              onClick={() => createTestAlert('danger')}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm"
+            >
+              위험 알림 생성
+            </button>
+            <button 
+              onClick={() => createTestAlert('warning')}
+              className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors text-sm"
+            >
+              주의 알림 생성
+            </button>
+            <button 
+              onClick={() => createTestAlert('info')}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+            >
+              정상화 알림 생성
+            </button>
+            <button 
+              onClick={() => setAlertMessages([])}
+              className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors text-sm"
+            >
+              모든 알림 제거
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-700">🔊 오디오 알림:</span>
+              <button 
+                onClick={() => setAudioEnabled(!audioEnabled)}
+                className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                  audioEnabled 
+                    ? 'bg-green-600 text-white hover:bg-green-700' 
+                    : 'bg-gray-400 text-white hover:bg-gray-500'
+                }`}
+              >
+                {audioEnabled ? '켜짐' : '꺼짐'}
+              </button>
+            </div>
+            <button 
+              onClick={() => playAlertSound('danger')}
+              className="bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700 transition-colors"
+            >
+              🔊 소리 테스트
+            </button>
+          </div>
+          
+          {/* 비상 상황 기록 상태 */}
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-gray-700">📊 비상 상황 기록:</span>
+            <button 
+              onClick={() => window.open('/emergency', '_blank')}
+              className="bg-indigo-600 text-white px-3 py-1 rounded text-sm hover:bg-indigo-700 transition-colors"
+            >
+              관리 페이지 열기
+            </button>
+            <button 
+              onClick={() => {
+                // 모든 비상 상황 기록 삭제 (테스트용)
+                if (confirm('모든 비상 상황 기록을 삭제하시겠습니까? (테스트용)')) {
+                  fetch('/api/emergency/incidents', { method: 'DELETE' })
+                    .then(() => {
+                      alert('비상 상황 기록이 삭제되었습니다.');
+                    })
+                    .catch(() => {
+                      alert('삭제에 실패했습니다.');
+                    });
+                }
+              }}
+              className="bg-gray-500 text-white px-3 py-1 rounded text-sm hover:bg-gray-600 transition-colors"
+            >
+              기록 초기화
+            </button>
+          </div>
         </div>
       </div>
 
@@ -286,7 +575,7 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center space-x-2">
               <button 
-                onClick={() => deactivateAlert(activeAlert.id)}
+                onClick={() => handleEmergencyProtocol('lpg_gas_leak')}
                 className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
               >
                 비상 프로토콜 실행
@@ -345,35 +634,106 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* 안전모 미착용 감지 */}
+            {/* 가스 누출 감지 */}
             <div className="bg-white rounded-lg p-6 shadow-sm">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-600">안전모 미착용 감지</span>
+                <span className="text-sm text-gray-600">가스 누출 감지</span>
                 <Bell className="w-[40px] h-[40px] text-white bg-[#F25959] rounded-full p-1" />
               </div>
               
-              
               <div className="flex items-center justify-between space-x-2">
-                <span className="text-[35px] font-bold">6건</span>
+                <span className="text-[35px] font-bold">{gasSensorStats.critical + gasSensorStats.danger}</span>
                 <div>
                   <TrendingUp className="w-4 h-4 text-red-500" />
-                  <span className="text-sm text-red-500">7.5% 전일 대비 증가</span>
+                  <span className="text-sm text-red-500">
+                    {gasSensorStats.critical > 0 ? '치명적' : gasSensorStats.danger > 0 ? '위험' : '정상'}
+                  </span>
                 </div>
               </div>
             </div>
-
-            {/* 감지 기록 */}
+            {/* 비상상황 기록 */}
             <div className="col-span-2 bg-white rounded-lg p-6 shadow-sm">
-              <div className="space-y-3">
-                {detectionEvents.map((event, index) => (
-                <div key={index} className="flex items-start space-x-3">
-                  <span className="text-sm text-gray-500 min-w-[40px]">{event.time}</span>
-                  <span className="text-sm text-gray-700">{event.message}</span>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-800">비상상황 기록</h3>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={fetchEmergencyRecords}
+                    className="text-sm text-blue-600 hover:text-blue-800"
+                  >
+                    새로고침
+                  </button>
+                  <button 
+                    onClick={() => router.push('/emergency/records')}
+                    className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                  >
+                    <History className="w-4 h-4" />
+                    전체보기
+                  </button>
                 </div>
-                ))}
+              </div>
+              <div className="max-h-96 overflow-y-auto space-y-3 pr-2">
+                {emergencyRecords.length > 0 ? (
+                  emergencyRecords.map((record, index) => (
+                    <div key={record.id || index} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
+                      <div className="flex-shrink-0">
+                        <div className={`w-2 h-2 rounded-full mt-2 ${
+                          record.severity === 'critical' ? 'bg-purple-500' :
+                          record.severity === 'high' ? 'bg-red-500' :
+                          record.severity === 'medium' ? 'bg-yellow-500' :
+                          'bg-blue-500'
+                        }`}></div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-medium text-gray-900 truncate">
+                            {record.title}
+                          </h4>
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            record.status === 'active' ? 'bg-red-100 text-red-800' :
+                            record.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                            record.status === 'completed' ? 'bg-green-100 text-green-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {record.status === 'active' ? '진행중' :
+                            record.status === 'in_progress' ? '처리중' :
+                            record.status === 'completed' ? '완료' : '취소'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-600 mt-1">
+                          {record.type === 'lpg_gas_leak' ? 'LPG 가스 누출' :
+                          record.type === 'safety_equipment' ? '안전장구 미착용' :
+                          record.type === 'crane_worker' ? '크레인 반경 내 작업자' :
+                          record.type === 'lpg_explosion' ? 'LPG 폭발 감지' : record.type}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {new Date(record.startedAt).toLocaleString('ko-KR')}
+                        </p>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-xs text-gray-500">
+                            완료: {record.executions.filter(exec => exec.status === 'completed').length}/{record.executions.length}단계
+                          </span>
+                          <button
+                            onClick={() => router.push(`/emergency/records/${record.id}`)}
+                            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                          >
+                            <Eye className="w-3 h-3" />
+                            상세보기
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <History className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <p>비상상황 기록이 없습니다.</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
+
+
 
           {/* 가스 누출 감지 센서 - 전체 너비 */}
           <div className="bg-white rounded-lg p-6 shadow-sm">
@@ -398,195 +758,148 @@ export default function Dashboard() {
             <div className="relative">
               {/* 배경 이미지 */}
               <div className="w-full h-[603px] bg-gray-100 rounded-lg flex items-center justify-center">
-                <img src="/images/drawing/wrapper.png" alt="건물 평면도" className="w-full h-full object-contain" />
+                {/* <img src="/images/drawing/wrapper.png" alt="건물 평면도" className="w-full h-full object-contain" /> */}
               </div>
               
-              {/* B동 센서들 - absolute 포지션 */}
+              {/* B동 센서들 - 12개 배치 */}
               <div className="absolute inset-0">
-                {/* B동 센서 1-4 */}
-                <div className="absolute top-[7%] left-[26%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">1번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-                <div className="absolute top-[7%] left-[30%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">2번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-                <div className="absolute top-[7%] left-[34%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">3번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-                <div className="absolute top-[7%] left-[45%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">4번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
+                {/* B동 센서들 - 12개 배치 */}
+                <div className="absolute top-[1%] left-[22%] w-[17%] h-[98%] border-2 border-gray-300 rounded-lg">
+                  {gasSensors.filter(sensor => sensor.building === 'B동').map((sensor) => {
+                    const getStatusColor = (status: string) => {
+                      switch (status) {
+                        case 'critical':
+                          return 'bg-red-100 border-red-300 text-red-800';
+                        case 'danger':
+                          return 'bg-orange-100 border-orange-300 text-orange-800';
+                        case 'warning':
+                          return 'bg-yellow-100 border-yellow-300 text-yellow-800';
+                        case 'safe':
+                        default:
+                          return 'bg-green-100 border-green-300 text-green-800';
+                      }
+                    };
+
+                    const getStatusText = (status: string) => {
+                      switch (status) {
+                        case 'critical':
+                          return '치명적';
+                        case 'danger':
+                          return '위험';
+                        case 'warning':
+                          return '주의';
+                        case 'safe':
+                        default:
+                          return '안전';
+                      }
+                    };
+
+                    return (
+                      <div
+                        key={sensor.id}
+                        className="absolute"
+                        style={{
+                          top: sensor.position.top,
+                          ...(sensor.position.left ? { left: sensor.position.left } : { right: sensor.position.right })
+                        }}
+                      >
+                        <div className={`border rounded p-2 text-center w-16 h-16 flex flex-col justify-center ${getStatusColor(sensor.status)}`}>
+                          <div className="text-xs font-medium">{sensor.name}</div>
+                          <div className="text-xs">{getStatusText(sensor.status)}</div>
+                          <div className="text-xs">{sensor.ppm.toFixed(3)}ppm</div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
-                {/* B동 센서 5-8 */}
-                <div className="absolute top-[20%] left-[15%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">5번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-                <div className="absolute top-[20%] left-[25%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">6번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-                <div className="absolute top-[20%] left-[35%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">7번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-                <div className="absolute top-[20%] left-[45%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">8번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
+                {/* A동 센서들 - 11개 배치 */}
+                <div>
+                {gasSensors.filter(sensor => sensor.building === 'A동').map((sensor) => {
+                    const getStatusColor = (status: string) => {
+                      switch (status) {
+                        case 'critical':
+                          return 'bg-red-100 border-red-300 text-red-800';
+                        case 'danger':
+                          return 'bg-orange-100 border-orange-300 text-orange-800';
+                        case 'warning':
+                          return 'bg-yellow-100 border-yellow-300 text-yellow-800';
+                        case 'safe':
+                        default:
+                          return 'bg-green-100 border-green-300 text-green-800';
+                      }
+                    };
 
-                {/* B동 센서 9-12 */}
-                <div className="absolute top-[30%] left-[15%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">9번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-                <div className="absolute top-[30%] left-[25%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">10번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-                <div className="absolute top-[30%] left-[35%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">11번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-                <div className="absolute top-[30%] left-[45%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">12번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
+                    const getStatusText = (status: string) => {
+                      switch (status) {
+                        case 'critical':
+                          return '치명적';
+                        case 'danger':
+                          return '위험';
+                        case 'warning':
+                          return '주의';
+                        case 'safe':
+                        default:
+                          return '안전';
+                      }
+                    };
 
-                {/* B동 센서 13-14 */}
-                <div className="absolute top-[40%] left-[15%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">13번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
+                    return (
+                      <div
+                        key={sensor.id}
+                        className="absolute"
+                        style={{
+                          top: sensor.position.top,
+                          ...(sensor.position.left ? { left: sensor.position.left } : { right: sensor.position.right })
+                        }}
+                      >
+                        <div className={`border rounded p-2 text-center w-16 h-16 flex flex-col justify-center ${getStatusColor(sensor.status)}`}>
+                          <div className="text-xs font-medium">{sensor.name}</div>
+                          <div className="text-xs">{getStatusText(sensor.status)}</div>
+                          <div className="text-xs">{sensor.ppm.toFixed(3)}ppm</div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="absolute top-[40%] left-[25%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">14번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-
-                {/* A동 센서들 */}
-                <div className="absolute top-[7%] right-[25%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">1번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-                <div className="absolute top-[7%] right-[15%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">2번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-                <div className="absolute top-[7%] right-[5%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">3번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-
-                <div className="absolute top-[20%] right-[25%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">4번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-                <div className="absolute top-[20%] right-[15%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">5번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-                <div className="absolute top-[20%] right-[5%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">6번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-
-                <div className="absolute top-[30%] right-[25%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">7번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-                <div className="absolute top-[30%] right-[15%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">8번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
-                </div>
-                <div className="absolute top-[30%] right-[5%]">
-                  <div className="bg-green-100 border border-green-300 rounded p-2 text-center w-16 h-16 flex flex-col justify-center">
-                    <div className="text-xs font-medium text-green-800">9번</div>
-                    <div className="text-xs text-green-600">안전</div>
-                    <div className="text-xs text-green-600">0.03ppm</div>
-                  </div>
+                {/* A동 라인 */}
+                <div className="absolute top-[1%] right-[22%] w-[17%] h-[98%] border-2 border-gray-300 rounded-lg rotate-53">
                 </div>
 
                 {/* 사무동 */}
-                <div className="absolute bottom-[20%] left-[20%]">
-                  <div className="bg-gray-100 border border-gray-300 rounded p-4 w-24 h-16 flex items-center justify-center">
+                <div className="absolute bottom-[1%] left-[39.1%]">
+                  <div className="bg-gray-100 border border-gray-300 rounded p-4 w-24 h-36 flex items-center justify-center">
                     <span className="text-gray-500 text-xs">사무실</span>
                   </div>
                 </div>
 
                 {/* LPG 저장소 */}
-                <div className="absolute bottom-[20%] right-[20%]">
+                <div className="absolute top-[7%] right-[43%]">
                   <div className="bg-orange-100 border border-orange-300 rounded p-4 w-24 h-16 flex items-center justify-center">
                     <span className="text-orange-700 text-xs">LPG 저장소</span>
+                  </div>
+                </div>
+
+                {/* 카메라 1번*/}
+                <div className="absolute top-[10%] right-[37%]">
+                  <div className="p-4 w-24 h-16 flex items-center justify-center">
+                    <img src="/images/cctv.svg" alt="cctv_1" className="w-full h-full object-contain" />
+                  </div>
+                </div>
+                
+                
+                {/* 카메라 2번*/}
+                <div className="absolute top-[67%] right-[54%]">
+                  <div className="p-4 w-24 h-16 flex items-center justify-center">
+                    <img src="/images/cctv.svg" alt="cctv_2" className="w-full h-full object-contain" />
+                  </div>
+                </div>
+
+                
+                {/* 카메라 3번*/}
+                <div className="absolute top-[90%] right-[38%]">
+                  <div className="p-4 w-24 h-16 flex items-center justify-center">
+                    <img src="/images/cctv.svg" alt="cctv_3" className="w-full h-full object-contain" />
                   </div>
                 </div>
               </div>
@@ -671,6 +984,15 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* 비상 상황 팝업 */}
+      {showEmergencyPopup && (
+        <EmergencyPopup
+          incident={activeEmergency}
+          onClose={() => setShowEmergencyPopup(false)}
+          onComplete={handleEmergencyComplete}
+        />
+      )}
     </div>
   );
 }

@@ -287,7 +287,7 @@ export default function GatewayDetailView({ data }: GatewayDetailViewProps) {
               </div>
               <div>
                 <p className="text-sm font-medium text-gray-500">근접 알림</p>
-                <p className="text-lg font-semibold text-gray-900">{gateway.proximityAlerts.length}건</p>
+                <p className="text-lg font-semibold text-gray-900">{gateway.proximityAlerts?.length || 0}건</p>
               </div>
             </div>
           </div>

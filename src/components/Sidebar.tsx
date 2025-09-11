@@ -1,6 +1,6 @@
 'use client';
 
-import { Users, UserCheck, Wifi, Video, Monitor, AlertTriangle, Router, FileText } from 'lucide-react';
+import { Users, UserCheck, Wifi, Video, Monitor, AlertTriangle, Router, FileText, Shield, History } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -66,6 +66,18 @@ export default function Sidebar({ activeItem }: SidebarProps) {
       icon: FileText,
       href: '/logs',
     },
+    {
+      id: 'emergency',
+      label: '비상 상황 관리',
+      icon: Shield,
+      href: '/emergency',
+    },
+    {
+      id: 'emergency-records',
+      label: '비상 상황 기록',
+      icon: History,
+      href: '/emergency/records',
+    },
   ];
 
   const getActiveItem = () => {
@@ -78,6 +90,8 @@ export default function Sidebar({ activeItem }: SidebarProps) {
     if (pathname.startsWith('/beacons')) return 'beacons';
     if (pathname.startsWith('/gateways')) return 'gateways';
     if (pathname.startsWith('/logs')) return 'logs';
+    if (pathname.startsWith('/emergency/records')) return 'emergency-records';
+    if (pathname.startsWith('/emergency')) return 'emergency';
     return activeItem || 'dashboard';
   };
 

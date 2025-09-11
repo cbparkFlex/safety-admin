@@ -71,6 +71,10 @@ export default function GatewayManagement() {
         : "/api/gateways";
       const method = editingGateway ? "PUT" : "POST";
 
+      console.log("요청 URL:", url);
+      console.log("요청 메서드:", method);
+      console.log("요청 데이터:", formData);
+
       const response = await fetch(url, {
         method,
         headers: {
@@ -79,17 +83,24 @@ export default function GatewayManagement() {
         body: JSON.stringify(formData),
       });
 
+      console.log("응답 상태:", response.status);
+      console.log("응답 OK:", response.ok);
+
       if (response.ok) {
+        const result = await response.json();
+        console.log("성공 응답:", result);
         await fetchGateways();
         resetForm();
         setIsModalOpen(false);
+        alert(result.message || "저장되었습니다.");
       } else {
         const errorData = await response.json();
+        console.error("에러 응답:", errorData);
         alert(errorData.error || "저장에 실패했습니다.");
       }
     } catch (error) {
       console.error("저장 실패:", error);
-      alert("저장 중 오류가 발생했습니다.");
+      alert("저장 중 오류가 발생했습니다: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -111,19 +122,27 @@ export default function GatewayManagement() {
     if (!confirm("정말로 삭제하시겠습니까?")) return;
 
     try {
+      console.log("삭제 요청 ID:", id);
       const response = await fetch(`/api/gateways/${id}`, {
         method: "DELETE",
       });
 
+      console.log("삭제 응답 상태:", response.status);
+      console.log("삭제 응답 OK:", response.ok);
+
       if (response.ok) {
+        const result = await response.json();
+        console.log("삭제 성공 응답:", result);
         await fetchGateways();
+        alert(result.message || "삭제되었습니다.");
       } else {
         const errorData = await response.json();
+        console.error("삭제 에러 응답:", errorData);
         alert(errorData.error || "삭제에 실패했습니다.");
       }
     } catch (error) {
       console.error("삭제 실패:", error);
-      alert("삭제 중 오류가 발생했습니다.");
+      alert("삭제 중 오류가 발생했습니다: " + error.message);
     }
   };
 
