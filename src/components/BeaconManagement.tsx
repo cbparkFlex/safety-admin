@@ -52,7 +52,7 @@ export default function BeaconManagement() {
       const response = await fetch("/api/beacons");
       if (response.ok) {
         const data = await response.json();
-        setBeacons(data);
+        setBeacons(data.beacons || []);
       }
     } catch (error) {
       console.error("비콘 목록 조회 실패:", error);

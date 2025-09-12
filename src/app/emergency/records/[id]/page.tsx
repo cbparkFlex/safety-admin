@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   ArrowLeft,
@@ -65,21 +65,22 @@ const TYPE_LABELS = {
   lpg_explosion: 'LPG 폭발 감지'
 };
 
-export default function EmergencyRecordDetailPage({ params }: { params: { id: string } }) {
+export default function EmergencyRecordDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
+  const resolvedParams = use(params);
   const [incident, setIncident] = useState<EmergencyIncident | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (params.id) {
+    if (resolvedParams.id) {
       fetchIncident();
     }
-  }, [params.id]);
+  }, [resolvedParams.id]);
 
   const fetchIncident = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/emergency/incidents/${params.id}`);
+      const response = await fetch(`/api/emergency/incidents/${resolvedParams.id}`);
       if (response.ok) {
         const data = await response.json();
         setIncident(data.data);

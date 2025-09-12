@@ -56,6 +56,18 @@ interface EmergencyRecord {
   }>;
 }
 
+interface CctvStream {
+  id: number;
+  name: string;
+  description?: string;
+  streamUrl: string;
+  location?: string;
+  isActive: boolean;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const [currentTime, setCurrentTime] = useState('');
@@ -81,6 +93,9 @@ export default function Dashboard() {
   
   // 비상상황 기록 상태
   const [emergencyRecords, setEmergencyRecords] = useState<EmergencyRecord[]>([]);
+  
+  // CCTV 스트림 상태
+  const [cctvStreams, setCctvStreams] = useState<CctvStream[]>([]);
   
   // 날씨 정보 상태
   const [weatherInfo, setWeatherInfo] = useState<{
@@ -332,12 +347,66 @@ export default function Dashboard() {
   // 가스 센서 데이터 가져오기
   const fetchGasSensors = async () => {
     try {
-      const response = await fetch('/api/gas-sensors');
-      const result = await response.json();
+      // 실시간 가스 센서 데이터 가져오기
+      const gasResponse = await fetch('/api/gas?hours=1&limit=1000');
+      const gasResult = await gasResponse.json();
       
-      if (result.success) {
-        setGasSensors(result.data);
-        setGasSensorStats(result.stats);
+      // 센서 매칭 정보 가져오기
+      const sensorsResponse = await fetch('/api/sensors');
+      const sensorsResult = await sensorsResponse.json();
+      
+      // 기존 가스 센서 위치 정보 가져오기 (시각적 배치용)
+      const positionsResponse = await fetch('/api/gas-sensors');
+      const positionsResult = await positionsResponse.json();
+      
+      if (gasResult.success && sensorsResult.success && positionsResult.success) {
+        // 센서 매칭 데이터와 실시간 데이터 결합
+        const combinedData = sensorsResult.data.map((sensorMapping: any) => {
+          const realtimeData = gasResult.data.summary[sensorMapping.sensorId];
+          const positionData = positionsResult.data.find((pos: any) => {
+            // 센서 ID에서 번호 추출 (A_01 -> 01, A_1 -> 1)
+            const sensorNumber = sensorMapping.sensorId.split('_')[1];
+            // 위치 데이터의 name에서 번호 추출 (1번 -> 1, 01번 -> 01)
+            const positionNumber = pos.name.replace('번', '');
+            
+            // 건물 매칭 (A vs A동, B vs B동)
+            const buildingMatch = (sensorMapping.building === 'A' && pos.building === 'A동') ||
+                                 (sensorMapping.building === 'B' && pos.building === 'B동');
+            
+            // 번호 매칭 (01 vs 1, 02 vs 2 등)
+            const numberMatch = sensorNumber === positionNumber || 
+                               parseInt(sensorNumber) === parseInt(positionNumber);
+            
+            return buildingMatch && numberMatch;
+          });
+          
+          return {
+            id: sensorMapping.id,
+            name: sensorMapping.sensorId.split('_')[1], // A_01 -> 01
+            building: sensorMapping.building,
+            position: positionData?.position || { top: '0%', left: '0%' },
+            ppm: realtimeData?.value || 0,
+            status: realtimeData?.level || 'GAS_SAFE',
+            realtime: realtimeData ? {
+              value: realtimeData.value,
+              level: realtimeData.level,
+              lastUpdate: realtimeData.lastUpdate
+            } : null,
+            isActive: sensorMapping.isActive
+          };
+        }).filter((sensor: any) => sensor.isActive); // 활성 센서만 표시
+        
+        setGasSensors(combinedData);
+        
+        // 통계 계산
+        const stats = {
+          total: combinedData.length,
+          safe: combinedData.filter((s: any) => s.realtime?.level === 'GAS_SAFE').length,
+          warning: combinedData.filter((s: any) => s.realtime?.level === 'GAS_WARNING').length,
+          danger: combinedData.filter((s: any) => s.realtime?.level === 'GAS_DANGER').length,
+          critical: combinedData.filter((s: any) => s.realtime?.level === 'GAS_CRITICAL').length,
+        };
+        setGasSensorStats(stats);
       }
     } catch (err) {
       console.error('가스 센서 데이터를 가져오는 중 오류가 발생했습니다:', err);
@@ -377,6 +446,23 @@ export default function Dashboard() {
         windSpeed: 3,
         location: '경남 창원시 마산합포구 진북면'
       });
+    }
+  };
+
+  // CCTV 스트림 데이터 가져오기
+  const fetchCctvStreams = async () => {
+    try {
+      const response = await fetch('/api/cctv');
+      const result = await response.json();
+      
+      if (result.success) {
+        setCctvStreams(result.streams || []);
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (err) {
+      console.error('CCTV 스트림 데이터를 가져오는 중 오류가 발생했습니다:', err);
+      setCctvStreams([]);
     }
   };
 
@@ -491,13 +577,16 @@ export default function Dashboard() {
     const video = videoRefs.current[cameraId];
     if (!video) return;
 
-    const streamUrls = {
-      cctv001: 'http://210.99.70.120:1935/live/cctv001.stream/playlist.m3u8',
-      cctv002: 'http://210.99.70.120:1935/live/cctv002.stream/playlist.m3u8',
-      cctv003: 'http://210.99.70.120:1935/live/cctv003.stream/playlist.m3u8'
-    };
+    // 동적으로 CCTV 스트림 URL 가져오기
+    const stream = cctvStreams.find(s => s.isActive && s.order === parseInt(cameraId.replace('cctv', '')));
+    if (!stream) {
+      console.warn(`CCTV 스트림을 찾을 수 없습니다: ${cameraId}`);
+      setStreamError(prev => ({ ...prev, [cameraId]: '스트림을 찾을 수 없습니다' }));
+      setIsStreamLoading(prev => ({ ...prev, [cameraId]: false }));
+      return;
+    }
 
-    const streamUrl = streamUrls[cameraId as keyof typeof streamUrls];
+    const streamUrl = stream.streamUrl;
 
     // 기존 HLS 인스턴스 정리
     if (hlsRefs.current[cameraId]) {
@@ -607,6 +696,8 @@ export default function Dashboard() {
     fetchEmergencyRecords();
     // 날씨 정보 가져오기
     fetchWeatherInfo();
+    // CCTV 스트림 데이터 가져오기
+    fetchCctvStreams();
 
     // 가스 센서 데이터 실시간 업데이트 (5초마다)
     const gasSensorInterval = setInterval(() => {
@@ -618,12 +709,17 @@ export default function Dashboard() {
       fetchWeatherInfo();
     }, 600000); // 10분 = 600,000ms
 
-    // HLS 스트림 초기화
+    // HLS 스트림 초기화 (CCTV 스트림 데이터 로드 후)
     const streamInitTimeout = setTimeout(() => {
-      initializeHLSStream('cctv001');
-      initializeHLSStream('cctv002');
-      initializeHLSStream('cctv003');
-    }, 1000); // 1초 후 스트림 초기화
+      // 활성화된 CCTV 스트림들을 순서대로 초기화
+      cctvStreams
+        .filter(stream => stream.isActive)
+        .sort((a, b) => a.order - b.order)
+        .forEach((stream, index) => {
+          const cameraId = `cctv${String(index + 1).padStart(3, '0')}`;
+          initializeHLSStream(cameraId);
+        });
+    }, 2000); // 2초 후 스트림 초기화 (CCTV 데이터 로드 대기)
 
     // 시뮬레이션: 가스 누출 감지 알림 추가
     const alertInterval = setInterval(() => {
@@ -695,6 +791,30 @@ export default function Dashboard() {
       });
     };
   }, []);
+
+  // CCTV 스트림 변경 시 스트림 재초기화
+  useEffect(() => {
+    if (cctvStreams.length > 0) {
+      // 기존 스트림들 정리
+      Object.keys(hlsRefs.current).forEach(cameraId => {
+        if (hlsRefs.current[cameraId]) {
+          hlsRefs.current[cameraId]?.destroy();
+          hlsRefs.current[cameraId] = null;
+        }
+      });
+
+      // 새로운 스트림들 초기화
+      setTimeout(() => {
+        cctvStreams
+          .filter(stream => stream.isActive)
+          .sort((a, b) => a.order - b.order)
+          .forEach((stream, index) => {
+            const cameraId = `cctv${String(index + 1).padStart(3, '0')}`;
+            initializeHLSStream(cameraId);
+          });
+      }, 1000);
+    }
+  }, [cctvStreams]);
 
   // 현재 활성화된 알림 메시지
   const activeAlert = alertMessages.find(alert => alert.isActive);
@@ -1127,30 +1247,35 @@ export default function Dashboard() {
               <div className="absolute inset-0">
                 {/* B동 센서들 - 12개 배치 */}
                 <div className="absolute top-[1%] left-[22%] w-[17%] h-[98%] border-2 border-gray-300 rounded-lg">
-                  {gasSensors.filter(sensor => sensor.building === 'B동').map((sensor) => {
-                    const getStatusColor = (status: string) => {
-                      switch (status) {
-                        case 'critical':
+                  {gasSensors.filter(sensor => sensor.building === 'B').map((sensor) => {
+                    // 실시간 데이터가 있으면 사용, 없으면 기본값
+                    const currentStatus = sensor.realtime?.level || 'GAS_SAFE';
+                    const currentValue = sensor.realtime?.value || 0;
+                    const lastUpdate = sensor.realtime?.lastUpdate;
+                    
+                    const getStatusColor = (level: string) => {
+                      switch (level) {
+                        case 'GAS_CRITICAL':
                           return 'bg-red-100 border-red-300 text-red-800';
-                        case 'danger':
+                        case 'GAS_DANGER':
                           return 'bg-orange-100 border-orange-300 text-orange-800';
-                        case 'warning':
+                        case 'GAS_WARNING':
                           return 'bg-yellow-100 border-yellow-300 text-yellow-800';
-                        case 'safe':
+                        case 'GAS_SAFE':
                         default:
                           return 'bg-green-100 border-green-300 text-green-800';
                       }
                     };
 
-                    const getStatusText = (status: string) => {
-                      switch (status) {
-                        case 'critical':
+                    const getStatusText = (level: string) => {
+                      switch (level) {
+                        case 'GAS_CRITICAL':
                           return '치명적';
-                        case 'danger':
+                        case 'GAS_DANGER':
                           return '위험';
-                        case 'warning':
+                        case 'GAS_WARNING':
                           return '주의';
-                        case 'safe':
+                        case 'GAS_SAFE':
                         default:
                           return '안전';
                       }
@@ -1165,10 +1290,10 @@ export default function Dashboard() {
                           ...(sensor.position.left ? { left: sensor.position.left } : { right: sensor.position.right })
                         }}
                       >
-                        <div className={`border rounded p-2 text-center w-16 h-16 flex flex-col justify-center ${getStatusColor(sensor.status)}`}>
+                        <div className={`border rounded p-2 text-center w-16 h-16 flex flex-col justify-center ${getStatusColor(currentStatus)}`}>
                           <div className="text-xs font-medium">{sensor.name}</div>
-                          <div className="text-xs">{getStatusText(sensor.status)}</div>
-                          <div className="text-xs">{sensor.ppm.toFixed(3)}ppm</div>
+                          <div className="text-xs">{getStatusText(currentStatus)}</div>
+                          <div className="text-xs">{currentValue}ppm</div>
                         </div>
                       </div>
                     );
@@ -1177,30 +1302,35 @@ export default function Dashboard() {
 
                 {/* A동 센서들 - 11개 배치 */}
                 <div>
-                {gasSensors.filter(sensor => sensor.building === 'A동').map((sensor) => {
-                    const getStatusColor = (status: string) => {
-                      switch (status) {
-                        case 'critical':
+                {gasSensors.filter(sensor => sensor.building === 'A').map((sensor) => {
+                    // 실시간 데이터가 있으면 사용, 없으면 기본값
+                    const currentStatus = sensor.realtime?.level || 'GAS_SAFE';
+                    const currentValue = sensor.realtime?.value || 0;
+                    const lastUpdate = sensor.realtime?.lastUpdate;
+                    
+                    const getStatusColor = (level: string) => {
+                      switch (level) {
+                        case 'GAS_CRITICAL':
                           return 'bg-red-100 border-red-300 text-red-800';
-                        case 'danger':
+                        case 'GAS_DANGER':
                           return 'bg-orange-100 border-orange-300 text-orange-800';
-                        case 'warning':
+                        case 'GAS_WARNING':
                           return 'bg-yellow-100 border-yellow-300 text-yellow-800';
-                        case 'safe':
+                        case 'GAS_SAFE':
                         default:
                           return 'bg-green-100 border-green-300 text-green-800';
                       }
                     };
 
-                    const getStatusText = (status: string) => {
-                      switch (status) {
-                        case 'critical':
+                    const getStatusText = (level: string) => {
+                      switch (level) {
+                        case 'GAS_CRITICAL':
                           return '치명적';
-                        case 'danger':
+                        case 'GAS_DANGER':
                           return '위험';
-                        case 'warning':
+                        case 'GAS_WARNING':
                           return '주의';
-                        case 'safe':
+                        case 'GAS_SAFE':
                         default:
                           return '안전';
                       }
@@ -1215,10 +1345,10 @@ export default function Dashboard() {
                           ...(sensor.position.left ? { left: sensor.position.left } : { right: sensor.position.right })
                         }}
                       >
-                        <div className={`border rounded p-2 text-center w-16 h-16 flex flex-col justify-center ${getStatusColor(sensor.status)}`}>
+                        <div className={`border rounded p-2 text-center w-16 h-16 flex flex-col justify-center ${getStatusColor(currentStatus)}`}>
                           <div className="text-xs font-medium">{sensor.name}</div>
-                          <div className="text-xs">{getStatusText(sensor.status)}</div>
-                          <div className="text-xs">{sensor.ppm.toFixed(3)}ppm</div>
+                          <div className="text-xs">{getStatusText(currentStatus)}</div>
+                          <div className="text-xs">{currentValue}ppm</div>
                         </div>
                       </div>
                     );

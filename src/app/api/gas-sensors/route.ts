@@ -1,6 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// 가스 센서 위치 데이터 (B동 12개, A동 11개)
+// A동 가스 센서 자동 배치 함수
+const generateGasSensorPositions = (startTop: number, startRight: number, topInterval: number, rightInterval: number) => {
+  const sensors = [];
+  
+  // 1번부터 6번까지 순차적으로 배치
+  for (let i = 1; i <= 6; i++) {
+    sensors.push({
+      id: 13 + i,
+      name: `${i}번`,
+      building: 'A동',
+      position: {
+        top: `${startTop + (i - 1) * topInterval}%`,
+        right: `${startRight + (i - 1) * rightInterval}%`
+      }
+    });
+  }
+  
+  // 7번부터 10번까지 역순으로 배치 (top에 20% 추가)
+  for (let i = 7; i <= 10; i++) {
+    const reverseIndex = 10 - i; // 7번=3, 8번=2, 9번=1, 10번=0
+    sensors.push({
+      id: 13 + i,
+      name: `${i}번`,
+      building: 'A동',
+      position: {
+        top: `${startTop + 20 + reverseIndex * topInterval}%`, // top에 20% 추가
+        right: `${startRight + reverseIndex * rightInterval}%`
+      }
+    });
+  }
+  
+  return sensors;
+};
+
+// 가스 센서 위치 데이터 (B동 12개, A동 10개)
 const GAS_SENSOR_POSITIONS = [
   // B동 (왼쪽) - 12개
   { id: 1, name: '1번',   building: 'B동', position: { top: '5%', left: '13%' } },
@@ -17,17 +51,9 @@ const GAS_SENSOR_POSITIONS = [
   { id: 12, name: '12번', building: 'B동', position: { top: '70%', left: '65%' } },
   { id: 13, name: '13번', building: 'B동', position: { top: '83%', left: '13%' } },
   
-  // A동 (오른쪽) - 11개
-  { id: 14, name: '1번', building: 'A동', position:  { top: '10%', right: '20%' } },
-  { id: 15, name: '2번', building: 'A동', position:  { top: '20%', right: '24%' } },
-  { id: 16, name: '3번', building: 'A동', position:  { top: '30%', right: '28%' } },
-  { id: 17, name: '4번', building: 'A동', position:  { top: '40%', right: '32%' } },
-  { id: 18, name: '5번', building: 'A동', position:  { top: '50%', right: '36%' } },
-  { id: 19, name: '6번', building: 'A동', position:  { top: '60%', right: '40%' } },
-  { id: 20, name: '7번', building: 'A동', position:  { top: '80%', right: '36%' } },
-  { id: 21, name: '8번', building: 'A동', position:  { top: '70%', right: '32%' } },
-  { id: 22, name: '9번', building: 'A동', position:  { top: '60%', right: '28%' } },
-  { id: 23, name: '10번', building: 'A동', position: { top: '50%', right: '24%' } }
+  // A동 (오른쪽) - 10개 (자동 생성)
+  // 시작점: top 12%, right 17%, 간격: top 8%, right 5%
+  ...generateGasSensorPositions(12, 17, 8, 5)
 ];
 
 // 가스 센서 상태 데이터 (메모리 저장)

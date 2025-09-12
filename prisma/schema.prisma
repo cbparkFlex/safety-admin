@@ -297,3 +297,47 @@ model EmergencyPDF {
 
   @@map("emergency_pdfs")
 }
+
+// CCTV 스트림 관리
+model CctvStream {
+  id          Int      @id @default(autoincrement())
+  name        String   // 스트림 이름 (예: "A동 출입구")
+  description String?  // 설명
+  streamUrl   String   @map("stream_url") // HLS 스트림 URL
+  location    String?  // 위치 정보
+  isActive    Boolean  @default(true) @map("is_active") // 활성 상태
+  order       Int      @default(1) // 표시 순서
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("cctv_streams")
+}
+
+// 가스 센서 데이터 (대량 데이터 처리를 위한 최적화된 구조)
+model GasSensorData {
+  id        Int      @id @default(autoincrement())
+  sensorId  String   @map("sensor_id") // 센서 ID (예: "A_1", "B_5")
+  building  String   // 건물 (A, B)
+  value     Float    // 센서 값 (PPM)
+  level     String   // 위험도 레벨 (GAS_SAFE, GAS_WARNING, GAS_DANGER, GAS_CRITICAL)
+  timestamp DateTime // 측정 시간
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // 인덱스 추가 (성능 최적화)
+  @@index([building, timestamp])
+  @@index([sensorId, timestamp])
+  @@index([timestamp])
+  @@map("gas_sensor_data")
+}
+
+// 가스 센서 매칭 관리
+model GasSensorMapping {
+  id          Int      @id @default(autoincrement())
+  sensorId    String   @unique @map("sensor_id") // 센서 ID (예: "A_1", "B_5")
+  building    String   // 건물 (A, B)
+  isActive    Boolean  @default(true) @map("is_active") // 활성 상태
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("gas_sensor_mappings")
+}
