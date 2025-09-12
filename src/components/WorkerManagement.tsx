@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Plus, Mountain } from 'lucide-react';
+import { Search, Plus, Mountain, Vibrate } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -66,6 +66,30 @@ export default function WorkerManagement() {
 
   const handleAddWorker = () => {
     router.push('/workers/create');
+  };
+
+  // 진동 신호 보내기
+  const handleVibrate = async (equipmentId: string, workerName: string) => {
+    try {
+      const response = await fetch('/api/beacon-vibrate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ equipmentId }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        alert(`${workerName}님의 장비(${equipmentId})에 진동 신호를 보냈습니다.`);
+      } else {
+        alert(`진동 신호 전송 실패: ${result.message || result.error || '알 수 없는 오류'}`);
+      }
+    } catch (error) {
+      console.error('진동 신호 전송 오류:', error);
+      alert('진동 신호 전송 중 오류가 발생했습니다.');
+    }
   };
 
   return (
@@ -138,6 +162,9 @@ export default function WorkerManagement() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   건강 유의사항
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  진동 신호
+                </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -183,6 +210,16 @@ export default function WorkerManagement() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {worker.healthPrecautions}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <button
+                      onClick={() => handleVibrate(worker.equipmentId, worker.name)}
+                      className="flex items-center space-x-1 bg-orange-500 text-white px-3 py-1 rounded-md hover:bg-orange-600 transition-colors text-sm"
+                      title={`${worker.name}님의 장비에 진동 신호 보내기`}
+                    >
+                      <Vibrate className="w-4 h-4" />
+                      <span>진동</span>
+                    </button>
                   </td>
                 </tr>
               ))}

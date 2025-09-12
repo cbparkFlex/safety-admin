@@ -17,7 +17,9 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/mqtt": "^2.5.0",
     "@types/pg": "^8.15.5",
+    "@videojs/http-streaming": "^3.17.2",
     "better-sqlite3": "^12.2.0",
+    "hls.js": "^1.6.12",
     "lucide-react": "^0.542.0",
     "mqtt": "^5.14.1",
     "next": "15.5.2",
@@ -26,7 +28,8 @@
     "prisma": "^6.15.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "video.js": "^8.23.4"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

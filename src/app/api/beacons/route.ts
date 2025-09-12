@@ -4,13 +4,16 @@ import { prisma } from "@/lib/prisma";
 export async function GET() {
   try {
     const beacons = await prisma.beacon.findMany({
+      include: {
+        gateway: true
+      },
       orderBy: { createdAt: "desc" },
     });
-    return NextResponse.json(beacons);
+    return NextResponse.json({ success: true, beacons });
   } catch (error) {
     console.error("비콘 목록 조회 실패:", error);
     return NextResponse.json(
-      { error: "비콘 목록을 조회할 수 없습니다." },
+      { success: false, error: "비콘 목록을 조회할 수 없습니다." },
       { status: 500 }
     );
   }

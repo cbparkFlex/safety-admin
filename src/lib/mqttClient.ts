@@ -21,7 +21,7 @@ let mqttClient: mqtt.MqttClient | null = null;
 // mqttClient export
 export { mqttClient };
 
-// 비콘 명령 전송 함수
+// 비콘 명령 전송 함수 (Promise 기반으로 dAck 응답 대기)
 export async function sendBeaconCommand(beaconId: string, command: any, gatewayId?: string): Promise<boolean> {
   if (!mqttClient || !mqttClient.connected) {
     console.error('MQTT 클라이언트가 연결되지 않았습니다.');
@@ -59,11 +59,14 @@ export async function sendBeaconCommand(beaconId: string, command: any, gatewayI
     // Gateway별 동적 subaction topic 생성
     const subactionTopic = `${targetGateway.mqttTopic}/subaction`;
     
+    // 시퀀스 번호 생성
+    const seq = Math.floor(Date.now() / 1000) % 1000000;
+    
     // KBeacon 문서에 따른 올바른 메시지 형식 구성
     const gatewayMessage = {
       msg: "dData",                    // Gateway Message Head
       mac: command.mac,                // 비콘 MAC 주소
-      seq: Math.floor(Date.now() / 1000) % 1000000,  // 시퀀스 번호 (6자리)
+      seq: seq,                        // 시퀀스 번호 (6자리)
       auth1: "0000000000000000",       // 기본 비밀번호
       dType: "json",                   // 다운로드 메시지 타입
       data: {                          // Message Body (비콘으로 전달)
@@ -77,15 +80,60 @@ export async function sendBeaconCommand(beaconId: string, command: any, gatewayI
     
     console.log(`📤 비콘 명령 전송: ${beaconId} → ${targetGateway.gatewayId} (${subactionTopic})`, gatewayMessage);
     
-    mqttClient.publish(subactionTopic, JSON.stringify(gatewayMessage), (error) => {
-      if (error) {
-        console.error(`비콘 명령 전송 실패: ${beaconId}`, error);
-      } else {
-        console.log(`✅ 비콘 명령 전송 성공: ${beaconId} → ${targetGateway.gatewayId}`);
-      }
+    // Promise를 사용하여 dAck 응답 대기
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        console.warn(`⏰ 비콘 명령 응답 타임아웃: ${beaconId} (${seq})`);
+        resolve(false);
+      }, 10000); // 10초 타임아웃
+
+      // dAck 응답 리스너 등록
+      const responseHandler = (topic: string, message: Buffer) => {
+        try {
+          const rawMessage = JSON.parse(message.toString());
+          
+          // 해당 시퀀스 번호의 dAck 응답인지 확인
+          if (rawMessage.msg === 'dAck' && rawMessage.seq === seq && rawMessage.mac === command.mac) {
+            console.log(`📥 Gateway dAck 응답 수신: ${topic}`, {
+              mac: rawMessage.mac,
+              seq: rawMessage.seq,
+              rslt: rawMessage.rslt,
+              cause: rawMessage.cause,
+              gmac: rawMessage.gmac
+            });
+            
+            clearTimeout(timeout);
+            mqttClient?.removeListener('message', responseHandler);
+            
+            if (rawMessage.rslt === 'succ' && rawMessage.cause === 0) {
+              console.log(`✅ 비콘 명령 성공: ${beaconId} (${rawMessage.mac})`);
+              resolve(true);
+            } else {
+              console.log(`❌ 비콘 명령 실패: ${beaconId} (${rawMessage.mac}) - cause: ${rawMessage.cause}`);
+              resolve(false);
+            }
+          }
+        } catch (error) {
+          console.error('dAck 응답 파싱 오류:', error);
+        }
+      };
+
+      // 응답 리스너 등록
+      mqttClient.on('message', responseHandler);
+      
+      // 명령 전송
+      mqttClient.publish(subactionTopic, JSON.stringify(gatewayMessage), (error) => {
+        if (error) {
+          console.error(`비콘 명령 전송 실패: ${beaconId}`, error);
+          clearTimeout(timeout);
+          mqttClient?.removeListener('message', responseHandler);
+          resolve(false);
+        } else {
+          console.log(`✅ 비콘 명령 전송 성공: ${beaconId} → ${targetGateway.gatewayId}`);
+        }
+      });
     });
 
-    return true;
   } catch (error) {
     console.error('비콘 명령 전송 중 오류:', error);
     return false;
@@ -264,7 +312,7 @@ async function handleBeaconMessage(topic: string, message: Buffer) {
 
     // Gateway 응답 메시지인지 확인 (dAck 메시지)
     if (rawMessage.msg === 'dAck') {
-      console.log(`📥 Gateway 응답 수신: ${topic}`, {
+      console.log(`📥 Gateway dAck 응답 수신: ${topic}`, {
         mac: rawMessage.mac,
         seq: rawMessage.seq,
         rslt: rawMessage.rslt,
@@ -272,10 +320,11 @@ async function handleBeaconMessage(topic: string, message: Buffer) {
         gmac: rawMessage.gmac
       });
       
-      if (rawMessage.rslt === 'succ') {
+      // dAck 응답은 sendBeaconCommand에서 Promise로 처리되므로 여기서는 로그만 출력
+      if (rawMessage.rslt === 'succ' && rawMessage.cause === 0) {
         console.log(`✅ 비콘 명령 성공: ${rawMessage.mac}`);
       } else {
-        console.log(`❌ 비콘 명령 실패: ${rawMessage.mac} - ${rawMessage.cause}`);
+        console.log(`❌ 비콘 명령 실패: ${rawMessage.mac} - cause: ${rawMessage.cause}`);
       }
       return; // 응답 메시지는 처리하지 않고 종료
     }

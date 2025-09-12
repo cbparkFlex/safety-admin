@@ -4,18 +4,21 @@ import { sendBeaconCommand } from "@/lib/mqttClient";
 
 export async function POST(request: NextRequest) {
   try {
-    const { beaconId, ringType, ringTime } = await request.json();
+    const { beaconId, equipmentId, ringType, ringTime } = await request.json();
 
-    if (!beaconId) {
+    // beaconId 또는 equipmentId 중 하나는 필요
+    const targetBeaconId = beaconId || equipmentId;
+    
+    if (!targetBeaconId) {
       return NextResponse.json({
-        message: "beaconId가 필요합니다",
+        message: "beaconId 또는 equipmentId가 필요합니다",
         error: "MISSING_BEACON_ID"
       }, { status: 400 });
     }
 
     // 비콘 존재 여부 확인 (MAC 주소 포함)
     const beacon = await prisma.beacon.findUnique({
-      where: { beaconId: beaconId },
+      where: { beaconId: targetBeaconId },
       select: {
         beaconId: true,
         name: true,
@@ -40,7 +43,7 @@ export async function POST(request: NextRequest) {
 
     // 비콘의 Gateway 정보 조회
     const beaconWithGateway = await prisma.beacon.findUnique({
-      where: { beaconId: beaconId },
+      where: { beaconId: targetBeaconId },
       include: {
         gateway: true
       }
@@ -66,21 +69,27 @@ export async function POST(request: NextRequest) {
       // ledOn과 ledOff는 vibration에는 필요하지 않음
     };
 
-    console.log(`📳 비콘 진동 명령 전송: ${beaconId}`, ringCommand);
+    console.log(`📳 비콘 진동 명령 전송: ${targetBeaconId}`, ringCommand);
 
     // MQTT를 통해 Gateway로 비콘 명령 전송
-    const commandSent = await sendBeaconCommand(beaconId, ringCommand, gateway.gatewayId);
+    const commandSent = await sendBeaconCommand(targetBeaconId, ringCommand, gateway.gatewayId);
     
     if (!commandSent) {
       return NextResponse.json({
-        message: "MQTT 클라이언트가 연결되지 않아 명령을 전송할 수 없습니다",
-        error: "MQTT_NOT_CONNECTED"
-      }, { status: 503 });
+        success: false,
+        message: "비콘 진동 명령 전송에 실패했습니다",
+        error: "COMMAND_SEND_FAILED",
+        beaconId: targetBeaconId,
+        beaconName: beacon.name,
+        macAddress: beacon.macAddress,
+        gatewayId: gateway.gatewayId
+      }, { status: 500 });
     }
 
     return NextResponse.json({
-      message: "비콘 진동 명령이 Gateway로 전송되었습니다",
-      beaconId: beaconId,
+      success: true,
+      message: "비콘 진동 명령이 성공적으로 전송되었습니다",
+      beaconId: targetBeaconId,
       beaconName: beacon.name,
       macAddress: beacon.macAddress,
       command: ringCommand,

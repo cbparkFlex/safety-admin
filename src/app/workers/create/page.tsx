@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Upload, Save, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
@@ -14,6 +14,18 @@ interface CreateWorkerForm {
   affiliation: string;
   emergencyContact: string;
   equipmentId: string;
+}
+
+interface Beacon {
+  id: number;
+  beaconId: string;
+  macAddress: string;
+  name: string;
+  status: string;
+  gateway?: {
+    gatewayId: string;
+    name: string;
+  };
 }
 
 export default function CreateWorker() {
@@ -31,8 +43,33 @@ export default function CreateWorker() {
   const [profileImage, setProfileImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [beacons, setBeacons] = useState<Beacon[]>([]);
+  const [beaconsLoading, setBeaconsLoading] = useState(true);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  // 비콘 목록 가져오기
+  const fetchBeacons = async () => {
+    try {
+      setBeaconsLoading(true);
+      const response = await fetch('/api/beacons');
+      const data = await response.json();
+      
+      if (data.success) {
+        setBeacons(data.beacons || []);
+      } else {
+        console.error('비콘 목록 조회 실패:', data.error);
+      }
+    } catch (error) {
+      console.error('비콘 목록 조회 중 오류:', error);
+    } finally {
+      setBeaconsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBeacons();
+  }, []);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
@@ -249,17 +286,45 @@ export default function CreateWorker() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      장비 ID *
+                      장비 ID (비콘 선택) *
                     </label>
-                    <input
-                      type="text"
-                      name="equipmentId"
-                      value={formData.equipmentId}
-                      onChange={handleInputChange}
-                      placeholder="장비 ID"
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
+                    {beaconsLoading ? (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                        <span className="ml-2 text-sm text-gray-600">비콘 목록 로딩 중...</span>
+                      </div>
+                    ) : (
+                      <select
+                        name="equipmentId"
+                        value={formData.equipmentId}
+                        onChange={handleInputChange}
+                        required
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="">비콘을 선택하세요</option>
+                        {beacons
+                          .filter(beacon => beacon.status === 'active')
+                          .map((beacon) => (
+                            <option key={beacon.id} value={beacon.beaconId}>
+                              {beacon.name} ({beacon.beaconId}) - {beacon.macAddress}
+                              {beacon.gateway && ` - ${beacon.gateway.name}`}
+                            </option>
+                          ))}
+                      </select>
+                    )}
+                    {!beaconsLoading && beacons.filter(beacon => beacon.status === 'active').length === 0 && (
+                      <div className="mt-2">
+                        <p className="text-sm text-red-600 mb-2">
+                          활성화된 비콘이 없습니다.
+                        </p>
+                        <Link 
+                          href="/beacons" 
+                          className="text-sm text-blue-600 hover:text-blue-800 underline"
+                        >
+                          비콘 관리 페이지에서 비콘을 등록해주세요 →
+                        </Link>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

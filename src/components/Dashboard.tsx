@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Users, Bell, TrendingUp, TrendingDown, Clock, Wrench, Mountain, AlertTriangle, History, Eye } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Users, Bell, TrendingUp, TrendingDown, Clock, Wrench, Mountain, AlertTriangle, History, Eye, Vibrate } from 'lucide-react';
 import EmergencyPopup from './EmergencyPopup';
 import { useRouter } from 'next/navigation';
+import Hls from 'hls.js';
 
 interface DetectionEvent {
   time: string;
@@ -90,6 +91,50 @@ export default function Dashboard() {
     windSpeed: number;
     location: string;
   } | null>(null);
+  
+  // 테스트 도구 토글 상태
+  const [isTestToolsExpanded, setIsTestToolsExpanded] = useState(false);
+  
+  // RTSP 스트림 관련 상태
+  const [streamError, setStreamError] = useState<{[key: string]: string | null}>({
+    cctv001: null,
+    cctv002: null,
+    cctv003: null
+  });
+  const [isStreamLoading, setIsStreamLoading] = useState<{[key: string]: boolean}>({
+    cctv001: true,
+    cctv002: true,
+    cctv003: true
+  });
+  const [isStreamPaused, setIsStreamPaused] = useState<{[key: string]: boolean}>({
+    cctv001: false,
+    cctv002: false,
+    cctv003: false
+  });
+  const [streamStats, setStreamStats] = useState<{[key: string]: {
+    memoryUsage: number;
+    lastUpdate: Date;
+    frameCount: number;
+  }}>({
+    cctv001: { memoryUsage: 0, lastUpdate: new Date(), frameCount: 0 },
+    cctv002: { memoryUsage: 0, lastUpdate: new Date(), frameCount: 0 },
+    cctv003: { memoryUsage: 0, lastUpdate: new Date(), frameCount: 0 }
+  });
+  const videoRefs = useRef<{[key: string]: HTMLVideoElement | null}>({
+    cctv001: null,
+    cctv002: null,
+    cctv003: null
+  });
+  const hlsRefs = useRef<{[key: string]: Hls | null}>({
+    cctv001: null,
+    cctv002: null,
+    cctv003: null
+  });
+  const streamTimeouts = useRef<{[key: string]: NodeJS.Timeout | null}>({
+    cctv001: null,
+    cctv002: null,
+    cctv003: null
+  });
 
   // 알림 메시지 추가 함수
   const addAlertMessage = (alert: Omit<AlertMessage, 'id' | 'timestamp'>) => {
@@ -335,6 +380,205 @@ export default function Dashboard() {
     }
   };
 
+  // 진동 신호 보내기
+  const handleVibrate = async (equipmentId: string, workerName: string) => {
+    try {
+      const response = await fetch('/api/beacon-vibrate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ equipmentId }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        alert(`${workerName}님의 장비(${equipmentId})에 진동 신호를 보냈습니다.`);
+      } else {
+        alert(`진동 신호 전송 실패: ${result.message || result.error || '알 수 없는 오류'}`);
+      }
+    } catch (error) {
+      console.error('진동 신호 전송 오류:', error);
+      alert('진동 신호 전송 중 오류가 발생했습니다.');
+    }
+  };
+
+  // 스트림 일시정지/재개
+  const toggleStreamPause = (cameraId: string) => {
+    const video = videoRefs.current[cameraId];
+    if (!video) return;
+
+    const isPaused = isStreamPaused[cameraId];
+    
+    if (isPaused) {
+      // 재개
+      video.play();
+      setIsStreamPaused(prev => ({ ...prev, [cameraId]: false }));
+      console.log(`스트림 재개: ${cameraId}`);
+    } else {
+      // 일시정지
+      video.pause();
+      setIsStreamPaused(prev => ({ ...prev, [cameraId]: true }));
+      console.log(`스트림 일시정지: ${cameraId}`);
+    }
+  };
+
+  // 스트림 정리 (메모리 절약)
+  const cleanupStream = (cameraId: string) => {
+    const video = videoRefs.current[cameraId];
+    const hls = hlsRefs.current[cameraId];
+    
+    // HLS 인스턴스 먼저 정리
+    if (hls) {
+      try {
+        hls.destroy();
+        console.log(`HLS 인스턴스 정리 완료: ${cameraId}`);
+      } catch (error) {
+        console.error(`HLS 정리 오류 (${cameraId}):`, error);
+      }
+      hlsRefs.current[cameraId] = null;
+    }
+    
+    // 비디오 요소 정리
+    if (video) {
+      try {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+        // 이벤트 리스너 제거
+        video.onloadstart = null;
+        video.oncanplay = null;
+        video.onerror = null;
+        console.log(`비디오 요소 정리 완료: ${cameraId}`);
+      } catch (error) {
+        console.error(`비디오 정리 오류 (${cameraId}):`, error);
+      }
+    }
+    
+    // 타임아웃 정리
+    if (streamTimeouts.current[cameraId]) {
+      clearTimeout(streamTimeouts.current[cameraId]!);
+      streamTimeouts.current[cameraId] = null;
+    }
+    
+    // 상태 초기화
+    setStreamStats(prev => ({
+      ...prev,
+      [cameraId]: { memoryUsage: 0, lastUpdate: new Date(), frameCount: 0 }
+    }));
+    
+    console.log(`스트림 완전 정리 완료: ${cameraId}`);
+  };
+
+  // 자동 정리 (5분 후)
+  const scheduleAutoCleanup = (cameraId: string) => {
+    if (streamTimeouts.current[cameraId]) {
+      clearTimeout(streamTimeouts.current[cameraId]!);
+    }
+    
+    streamTimeouts.current[cameraId] = setTimeout(() => {
+      if (!isStreamPaused[cameraId]) {
+        cleanupStream(cameraId);
+        setStreamError(prev => ({ ...prev, [cameraId]: '자동 정리됨 (메모리 절약)' }));
+        setIsStreamLoading(prev => ({ ...prev, [cameraId]: false }));
+      }
+    }, 300000); // 5분 = 300,000ms
+  };
+
+  // HLS 스트림 초기화 (최적화된 설정)
+  const initializeHLSStream = (cameraId: string) => {
+    const video = videoRefs.current[cameraId];
+    if (!video) return;
+
+    const streamUrls = {
+      cctv001: 'http://210.99.70.120:1935/live/cctv001.stream/playlist.m3u8',
+      cctv002: 'http://210.99.70.120:1935/live/cctv002.stream/playlist.m3u8',
+      cctv003: 'http://210.99.70.120:1935/live/cctv003.stream/playlist.m3u8'
+    };
+
+    const streamUrl = streamUrls[cameraId as keyof typeof streamUrls];
+
+    // 기존 HLS 인스턴스 정리
+    if (hlsRefs.current[cameraId]) {
+      hlsRefs.current[cameraId]?.destroy();
+    }
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false, // CPU 절약을 위해 false
+        backBufferLength: 30,  // 메모리 절약을 위해 30초로 단축
+        maxBufferLength: 60,   // 최대 버퍼 60초
+        maxMaxBufferLength: 120, // 최대 버퍼 120초
+        liveSyncDurationCount: 3, // 라이브 동기화 개수 줄임
+        liveMaxLatencyDurationCount: 5, // 최대 지연 시간 줄임
+        maxLoadingDelay: 4, // 로딩 지연 시간 줄임
+        maxBufferHole: 0.5, // 버퍼 홀 크기 줄임
+        highBufferWatchdogPeriod: 2, // 고버퍼 감시 주기 줄임
+        nudgeOffset: 0.1, // 누지 오프셋 줄임
+        nudgeMaxRetry: 3, // 누지 최대 재시도 줄임
+        maxFragLookUpTolerance: 0.25, // 프래그먼트 검색 허용 오차 줄임
+        liveDurationInfinity: false, // 라이브 지속시간 무한대 비활성화
+        liveBackBufferLength: 0, // 라이브 백버퍼 길이 0으로 설정
+        maxBufferSize: 30 * 1000 * 1000, // 최대 버퍼 크기 30MB로 제한
+      });
+
+      hlsRefs.current[cameraId] = hls;
+
+      hls.loadSource(streamUrl);
+      hls.attachMedia(video);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        console.log(`HLS 스트림 로드 완료: ${cameraId}`);
+        setIsStreamLoading(prev => ({ ...prev, [cameraId]: false }));
+        setStreamError(prev => ({ ...prev, [cameraId]: null }));
+        setIsStreamPaused(prev => ({ ...prev, [cameraId]: false }));
+        
+        // 자동 정리 스케줄링
+        scheduleAutoCleanup(cameraId);
+      });
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        console.error(`HLS 오류 (${cameraId}):`, data);
+        if (data.fatal) {
+          setStreamError(prev => ({ ...prev, [cameraId]: '스트림 연결에 실패했습니다' }));
+          setIsStreamLoading(prev => ({ ...prev, [cameraId]: false }));
+        }
+      });
+
+      // 프레임 카운트 및 메모리 사용량 모니터링
+      hls.on(Hls.Events.FRAG_LOADED, () => {
+        setStreamStats(prev => ({
+          ...prev,
+          [cameraId]: {
+            ...prev[cameraId],
+            frameCount: prev[cameraId].frameCount + 1,
+            lastUpdate: new Date(),
+            memoryUsage: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1024 / 1024) : 0
+          }
+        }));
+      });
+
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari의 네이티브 HLS 지원
+      video.src = streamUrl;
+      video.addEventListener('loadedmetadata', () => {
+        setIsStreamLoading(prev => ({ ...prev, [cameraId]: false }));
+        setStreamError(prev => ({ ...prev, [cameraId]: null }));
+        setIsStreamPaused(prev => ({ ...prev, [cameraId]: false }));
+        scheduleAutoCleanup(cameraId);
+      });
+      video.addEventListener('error', () => {
+        setStreamError(prev => ({ ...prev, [cameraId]: '스트림 연결에 실패했습니다' }));
+        setIsStreamLoading(prev => ({ ...prev, [cameraId]: false }));
+      });
+    } else {
+      setStreamError(prev => ({ ...prev, [cameraId]: '브라우저가 HLS 스트림을 지원하지 않습니다' }));
+      setIsStreamLoading(prev => ({ ...prev, [cameraId]: false }));
+    }
+  };
+
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
@@ -373,6 +617,13 @@ export default function Dashboard() {
     const weatherInterval = setInterval(() => {
       fetchWeatherInfo();
     }, 600000); // 10분 = 600,000ms
+
+    // HLS 스트림 초기화
+    const streamInitTimeout = setTimeout(() => {
+      initializeHLSStream('cctv001');
+      initializeHLSStream('cctv002');
+      initializeHLSStream('cctv003');
+    }, 1000); // 1초 후 스트림 초기화
 
     // 시뮬레이션: 가스 누출 감지 알림 추가
     const alertInterval = setInterval(() => {
@@ -425,6 +676,23 @@ export default function Dashboard() {
       clearInterval(normalInterval);
       clearInterval(gasSensorInterval);
       clearInterval(weatherInterval);
+      clearTimeout(streamInitTimeout);
+      
+      // HLS 인스턴스 정리
+      Object.keys(hlsRefs.current).forEach(cameraId => {
+        if (hlsRefs.current[cameraId]) {
+          hlsRefs.current[cameraId]?.destroy();
+          hlsRefs.current[cameraId] = null;
+        }
+      });
+      
+      // 스트림 타임아웃 정리
+      Object.keys(streamTimeouts.current).forEach(cameraId => {
+        if (streamTimeouts.current[cameraId]) {
+          clearTimeout(streamTimeouts.current[cameraId]!);
+          streamTimeouts.current[cameraId] = null;
+        }
+      });
     };
   }, []);
 
@@ -489,133 +757,148 @@ export default function Dashboard() {
     <div className="space-y-6">
       {/* 테스트 버튼 (개발용) */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="text-lg font-semibold text-blue-800 mb-3">🧪 비상 상황 테스트 도구</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-semibold text-blue-800">🧪 비상 상황 테스트 도구</h3>
+          <button
+            onClick={() => setIsTestToolsExpanded(!isTestToolsExpanded)}
+            className="flex items-center space-x-2 px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
+          >
+            <span>{isTestToolsExpanded ? '접기' : '펼치기'}</span>
+            <span className={`transform transition-transform ${isTestToolsExpanded ? 'rotate-180' : ''}`}>
+              ▼
+            </span>
+          </button>
+        </div>
         
-        {/* 비상 상황별 테스트 버튼 */}
-        <div className="mb-4">
-          <h4 className="text-md font-medium text-blue-700 mb-2">비상 상황 SOP 테스트</h4>
-          <p className="text-xs text-gray-600 mb-3">각 버튼을 클릭하면 해당 비상 상황의 SOP 팝업이 실행됩니다.</p>
-          <div className="grid grid-cols-2 gap-3">
-            <button 
-              onClick={() => handleEmergencyProtocol('lpg_gas_leak')}
-              className="bg-red-600 text-white px-4 py-3 rounded-lg hover:bg-red-700 transition-colors text-sm flex flex-col items-center group relative"
-              title="LPG 센서에서 가스 누출이 감지되었을 때의 대응 절차를 테스트합니다."
-            >
-              <span className="font-semibold">🚨 LPG 가스 누출</span>
-              <span className="text-xs opacity-90">5단계 SOP</span>
-              <span className="text-xs opacity-75 mt-1">즉시 작업 중단 → 가스 차단 → 환기 → 신고 → 안전 확인</span>
-            </button>
-            <button 
-              onClick={() => handleEmergencyProtocol('safety_equipment')}
-              className="bg-orange-600 text-white px-4 py-3 rounded-lg hover:bg-orange-700 transition-colors text-sm flex flex-col items-center group relative"
-              title="작업자가 안전장구를 착용하지 않은 상태로 감지되었을 때의 대응 절차를 테스트합니다."
-            >
-              <span className="font-semibold">⚠️ 안전장구 미착용</span>
-              <span className="text-xs opacity-90">4단계 SOP</span>
-              <span className="text-xs opacity-75 mt-1">작업 중단 → 안전장구 착용 → 교육 → 작업 재개</span>
-            </button>
-            <button 
-              onClick={() => handleEmergencyProtocol('crane_worker')}
-              className="bg-yellow-600 text-white px-4 py-3 rounded-lg hover:bg-yellow-700 transition-colors text-sm flex flex-col items-center group relative"
-              title="크레인 작업 반경 내에 작업자가 진입했을 때의 대응 절차를 테스트합니다."
-            >
-              <span className="font-semibold">🏗️ 크레인 반경 침입</span>
-              <span className="text-xs opacity-90">4단계 SOP</span>
-              <span className="text-xs opacity-75 mt-1">크레인 중단 → 작업자 대피 → 안전 확인 → 작업 재개</span>
-            </button>
-            <button 
-              onClick={() => handleEmergencyProtocol('lpg_explosion')}
-              className="bg-red-800 text-white px-4 py-3 rounded-lg hover:bg-red-900 transition-colors text-sm flex flex-col items-center group relative"
-              title="CCTV에서 LPG 저장소 주변에 폭발 위험이 감지되었을 때의 대응 절차를 테스트합니다."
-            >
-              <span className="font-semibold">💥 LPG 폭발 위험</span>
-              <span className="text-xs opacity-90">5단계 SOP</span>
-              <span className="text-xs opacity-75 mt-1">전체 대피 → 긴급 신고 → 가스 차단 → 전기 차단 → 전문가 대기</span>
-            </button>
-          </div>
-        </div>
-
-        {/* 기존 알림 테스트 버튼 */}
-        <div className="mb-3">
-          <h4 className="text-md font-medium text-blue-700 mb-2">일반 알림 테스트</h4>
-          <div className="flex space-x-2">
-            <button 
-              onClick={() => createTestAlert('danger')}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm"
-            >
-              위험 알림 생성
-            </button>
-            <button 
-              onClick={() => createTestAlert('warning')}
-              className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors text-sm"
-            >
-              주의 알림 생성
-            </button>
-            <button 
-              onClick={() => createTestAlert('info')}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
-            >
-              정상화 알림 생성
-            </button>
-            <button 
-              onClick={() => setAlertMessages([])}
-              className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors text-sm"
-            >
-              모든 알림 제거
-            </button>
-          </div>
-        </div>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-gray-700">🔊 오디오 알림:</span>
-              <button 
-                onClick={() => setAudioEnabled(!audioEnabled)}
-                className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                  audioEnabled 
-                    ? 'bg-green-600 text-white hover:bg-green-700' 
-                    : 'bg-gray-400 text-white hover:bg-gray-500'
-                }`}
-              >
-                {audioEnabled ? '켜짐' : '꺼짐'}
-              </button>
+        {isTestToolsExpanded && (
+          <>
+            {/* 비상 상황별 테스트 버튼 */}
+            <div className="mb-4">
+              <h4 className="text-md font-medium text-blue-700 mb-2">비상 상황 SOP 테스트</h4>
+              <p className="text-xs text-gray-600 mb-3">각 버튼을 클릭하면 해당 비상 상황의 SOP 팝업이 실행됩니다.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={() => handleEmergencyProtocol('lpg_gas_leak')}
+                  className="bg-red-600 text-white px-4 py-3 rounded-lg hover:bg-red-700 transition-colors text-sm flex flex-col items-center group relative"
+                  title="LPG 센서에서 가스 누출이 감지되었을 때의 대응 절차를 테스트합니다."
+                >
+                  <span className="font-semibold">🚨 LPG 가스 누출</span>
+                  <span className="text-xs opacity-90">5단계 SOP</span>
+                  <span className="text-xs opacity-75 mt-1">즉시 작업 중단 → 가스 차단 → 환기 → 신고 → 안전 확인</span>
+                </button>
+                <button 
+                  onClick={() => handleEmergencyProtocol('safety_equipment')}
+                  className="bg-orange-600 text-white px-4 py-3 rounded-lg hover:bg-orange-700 transition-colors text-sm flex flex-col items-center group relative"
+                  title="작업자가 안전장구를 착용하지 않은 상태로 감지되었을 때의 대응 절차를 테스트합니다."
+                >
+                  <span className="font-semibold">⚠️ 안전장구 미착용</span>
+                  <span className="text-xs opacity-90">4단계 SOP</span>
+                  <span className="text-xs opacity-75 mt-1">작업 중단 → 안전장구 착용 → 교육 → 작업 재개</span>
+                </button>
+                <button 
+                  onClick={() => handleEmergencyProtocol('crane_worker')}
+                  className="bg-yellow-600 text-white px-4 py-3 rounded-lg hover:bg-yellow-700 transition-colors text-sm flex flex-col items-center group relative"
+                  title="크레인 작업 반경 내에 작업자가 진입했을 때의 대응 절차를 테스트합니다."
+                >
+                  <span className="font-semibold">🏗️ 크레인 반경 침입</span>
+                  <span className="text-xs opacity-90">4단계 SOP</span>
+                  <span className="text-xs opacity-75 mt-1">크레인 중단 → 작업자 대피 → 안전 확인 → 작업 재개</span>
+                </button>
+                <button 
+                  onClick={() => handleEmergencyProtocol('lpg_explosion')}
+                  className="bg-red-800 text-white px-4 py-3 rounded-lg hover:bg-red-900 transition-colors text-sm flex flex-col items-center group relative"
+                  title="CCTV에서 LPG 저장소 주변에 폭발 위험이 감지되었을 때의 대응 절차를 테스트합니다."
+                >
+                  <span className="font-semibold">💥 LPG 폭발 위험</span>
+                  <span className="text-xs opacity-90">5단계 SOP</span>
+                  <span className="text-xs opacity-75 mt-1">전체 대피 → 긴급 신고 → 가스 차단 → 전기 차단 → 전문가 대기</span>
+                </button>
+              </div>
             </div>
-            <button 
-              onClick={() => playAlertSound('danger')}
-              className="bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700 transition-colors"
-            >
-              🔊 소리 테스트
-            </button>
-          </div>
-          
-          {/* 비상 상황 기록 상태 */}
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-700">📊 비상 상황 기록:</span>
-            <button 
-              onClick={() => window.open('/emergency', '_blank')}
-              className="bg-indigo-600 text-white px-3 py-1 rounded text-sm hover:bg-indigo-700 transition-colors"
-            >
-              관리 페이지 열기
-            </button>
-            <button 
-              onClick={() => {
-                // 모든 비상 상황 기록 삭제 (테스트용)
-                if (confirm('모든 비상 상황 기록을 삭제하시겠습니까? (테스트용)')) {
-                  fetch('/api/emergency/incidents', { method: 'DELETE' })
-                    .then(() => {
-                      alert('비상 상황 기록이 삭제되었습니다.');
-                    })
-                    .catch(() => {
-                      alert('삭제에 실패했습니다.');
-                    });
-                }
-              }}
-              className="bg-gray-500 text-white px-3 py-1 rounded text-sm hover:bg-gray-600 transition-colors"
-            >
-              기록 초기화
-            </button>
-          </div>
-        </div>
+
+            {/* 기존 알림 테스트 버튼 */}
+            <div className="mb-3">
+              <h4 className="text-md font-medium text-blue-700 mb-2">일반 알림 테스트</h4>
+              <div className="flex space-x-2">
+                <button 
+                  onClick={() => createTestAlert('danger')}
+                  className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm"
+                >
+                  위험 알림 생성
+                </button>
+                <button 
+                  onClick={() => createTestAlert('warning')}
+                  className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors text-sm"
+                >
+                  주의 알림 생성
+                </button>
+                <button 
+                  onClick={() => createTestAlert('info')}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                >
+                  정상화 알림 생성
+                </button>
+                <button 
+                  onClick={() => setAlertMessages([])}
+                  className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors text-sm"
+                >
+                  모든 알림 제거
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-gray-700">🔊 오디오 알림:</span>
+                  <button 
+                    onClick={() => setAudioEnabled(!audioEnabled)}
+                    className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                      audioEnabled 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-gray-400 text-white hover:bg-gray-500'
+                    }`}
+                  >
+                    {audioEnabled ? '켜짐' : '꺼짐'}
+                  </button>
+                </div>
+                <button 
+                  onClick={() => playAlertSound('danger')}
+                  className="bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700 transition-colors"
+                >
+                  🔊 소리 테스트
+                </button>
+              </div>
+              
+              {/* 비상 상황 기록 상태 */}
+              <div className="flex items-center space-x-2">
+                <span className="text-sm text-gray-700">📊 비상 상황 기록:</span>
+                <button 
+                  onClick={() => window.open('/emergency', '_blank')}
+                  className="bg-indigo-600 text-white px-3 py-1 rounded text-sm hover:bg-indigo-700 transition-colors"
+                >
+                  관리 페이지 열기
+                </button>
+                <button 
+                  onClick={() => {
+                    // 모든 비상 상황 기록 삭제 (테스트용)
+                    if (confirm('모든 비상 상황 기록을 삭제하시겠습니까? (테스트용)')) {
+                      fetch('/api/emergency/incidents', { method: 'DELETE' })
+                        .then(() => {
+                          alert('비상 상황 기록이 삭제되었습니다.');
+                        })
+                        .catch(() => {
+                          alert('삭제에 실패했습니다.');
+                        });
+                    }
+                  }}
+                  className="bg-gray-500 text-white px-3 py-1 rounded text-sm hover:bg-gray-600 transition-colors"
+                >
+                  기록 초기화
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* 알림 메시지 영역 */}
@@ -728,7 +1011,7 @@ export default function Dashboard() {
                   </button>
                 </div>
               </div>
-              <div className="max-h-96 overflow-y-auto space-y-3 pr-2">
+              <div className="max-h-48 overflow-y-auto space-y-3 pr-2">
                 {emergencyRecords.length > 0 ? (
                   emergencyRecords.map((record, index) => {
                     const isActive = record.status === 'active' || record.status === 'in_progress';
@@ -765,27 +1048,9 @@ export default function Dashboard() {
                                 </span>
                               )}
                             </h4>
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                              record.status === 'active' ? 'bg-red-100 text-red-800' :
-                              record.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
-                              record.status === 'completed' ? 'bg-green-100 text-green-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
-                              {record.status === 'active' ? '진행중' :
-                               record.status === 'in_progress' ? '처리중' :
-                               record.status === 'completed' ? '완료' : '취소'}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-600 mt-1">
-                            {record.type === 'lpg_gas_leak' ? 'LPG 가스 누출' :
-                             record.type === 'safety_equipment' ? '안전장구 미착용' :
-                             record.type === 'crane_worker' ? '크레인 반경 내 작업자' :
-                             record.type === 'lpg_explosion' ? 'LPG 폭발 감지' : record.type}
-                          </p>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {new Date(record.startedAt).toLocaleString('ko-KR')}
-                          </p>
-                          <div className="flex items-center justify-between mt-2">
+                            <p className="text-xs text-gray-500 mt-1">
+                              {new Date(record.startedAt).toLocaleString('ko-KR')}
+                            </p>
                             <span className="text-xs text-gray-500">
                               완료: {completedSteps}/{totalSteps}단계
                             </span>
@@ -801,6 +1066,20 @@ export default function Dashboard() {
                                 상세보기
                               </button>
                             )}
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              record.status === 'active' ? 'bg-red-100 text-red-800' :
+                              record.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                              record.status === 'completed' ? 'bg-green-100 text-green-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {record.status === 'active' ? '진행중' :
+                               record.status === 'in_progress' ? '처리중' :
+                               record.status === 'completed' ? '완료' : '취소'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between mt-2">
+                            
                           </div>
                         </div>
                       </div>
@@ -990,15 +1269,61 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div>
+        <div className="flex flex-col h-full">
           {/* 실시간 CCTV */}
           <h3 className="text-lg font-semibold text-gray-900 mb-4">실시간 CCTV</h3>
-          <div className="lg:col-span-2 bg-white rounded-lg p-6 shadow-sm">
-            <div className="grid grid-cols-1 gap-4">
-              {/* A동 출입구 */}
+          <div className="lg:col-span-2 bg-white rounded-lg p-6 shadow-sm flex-1">
+            <div className="grid grid-cols-1 gap-4 h-full">
+              {/* A동 출입구 - RTSP 스트림 */}
               <div className="relative">
-                <div className="bg-gray-200 rounded-lg h-[260px] flex items-center justify-center">
-                  <span className="text-gray-500 text-sm">A동 출입구</span>
+                <div className="bg-gray-900 rounded-lg h-[260px] flex items-center justify-center relative overflow-hidden">
+                  {isStreamLoading.cctv001 && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+                      <div className="text-white text-sm">스트림 로딩 중...</div>
+                    </div>
+                  )}
+                  
+                  {streamError.cctv001 ? (
+                    <div className="text-red-400 text-sm text-center">
+                      <div className="mb-2">스트림 연결 실패</div>
+                      <div className="text-xs text-gray-400">{streamError.cctv001}</div>
+                      <button 
+                        onClick={() => {
+                          // 기존 스트림 완전 정리
+                          cleanupStream('cctv001');
+                          // 상태 초기화
+                          setStreamError(prev => ({ ...prev, cctv001: null }));
+                          setIsStreamLoading(prev => ({ ...prev, cctv001: true }));
+                          setIsStreamPaused(prev => ({ ...prev, cctv001: false }));
+                          // 1초 후 재연결
+                          setTimeout(() => {
+                            initializeHLSStream('cctv001');
+                          }, 1000);
+                        }}
+                        className="mt-2 px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                      >
+                        재연결
+                      </button>
+                    </div>
+                  ) : (
+                    <video
+                      ref={(el) => { videoRefs.current.cctv001 = el; }}
+                      className="w-full h-full object-cover"
+                      controls
+                      autoPlay
+                      muted
+                      playsInline
+                      onLoadStart={() => setIsStreamLoading(prev => ({ ...prev, cctv001: true }))}
+                      onCanPlay={() => setIsStreamLoading(prev => ({ ...prev, cctv001: false }))}
+                      onError={(e) => {
+                        console.error('Video error (cctv001):', e);
+                        setStreamError(prev => ({ ...prev, cctv001: '비디오 스트림을 로드할 수 없습니다' }));
+                        setIsStreamLoading(prev => ({ ...prev, cctv001: false }));
+                      }}
+                    >
+                      <div className="text-white text-sm">브라우저가 비디오를 지원하지 않습니다.</div>
+                    </video>
+                  )}
                 </div>
                 <div className="absolute top-2 left-2 bg-red-500 text-white text-xs px-2 py-1 rounded">
                   UNSAFETY
@@ -1006,18 +1331,231 @@ export default function Dashboard() {
                 <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded">
                   SAFETY
                 </div>
+                <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                  A동 출입구
+                </div>
+                <div className="absolute top-2 left-2 flex space-x-1">
+                  <button
+                    onClick={() => toggleStreamPause('cctv001')}
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded"
+                    title={isStreamPaused.cctv001 ? '재개' : '일시정지'}
+                  >
+                    {isStreamPaused.cctv001 ? '▶️' : '⏸️'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      // 기존 스트림 완전 정리
+                      cleanupStream('cctv001');
+                      // 상태 초기화
+                      setStreamError(prev => ({ ...prev, cctv001: null }));
+                      setIsStreamLoading(prev => ({ ...prev, cctv001: true }));
+                      setIsStreamPaused(prev => ({ ...prev, cctv001: false }));
+                      // 1초 후 재연결
+                      setTimeout(() => {
+                        initializeHLSStream('cctv001');
+                      }, 1000);
+                    }}
+                    className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
+                    title="재연결"
+                  >
+                    🔄
+                  </button>
+                  <button
+                    onClick={() => cleanupStream('cctv001')}
+                    className="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
+                    title="정리"
+                  >
+                    🗑️
+                  </button>
+                </div>
+                <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                  {streamStats.cctv001.memoryUsage}MB | {streamStats.cctv001.frameCount}프레임
+                </div>
               </div>
-              {/* B동 출입구 */}
+              
+              {/* B동 출입구 - RTSP 스트림 */}
               <div className="relative">
-                <div className="bg-gray-200 rounded-lg h-[260px] flex items-center justify-center">
-                  <span className="text-gray-500 text-sm">B동 출입구</span>
+                <div className="bg-gray-900 rounded-lg h-[260px] flex items-center justify-center relative overflow-hidden">
+                  {isStreamLoading.cctv002 && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+                      <div className="text-white text-sm">스트림 로딩 중...</div>
+                    </div>
+                  )}
+                  
+                  {streamError.cctv002 ? (
+                    <div className="text-red-400 text-sm text-center">
+                      <div className="mb-2">스트림 연결 실패</div>
+                      <div className="text-xs text-gray-400">{streamError.cctv002}</div>
+                      <button 
+                        onClick={() => {
+                          // 기존 스트림 완전 정리
+                          cleanupStream('cctv002');
+                          // 상태 초기화
+                          setStreamError(prev => ({ ...prev, cctv002: null }));
+                          setIsStreamLoading(prev => ({ ...prev, cctv002: true }));
+                          setIsStreamPaused(prev => ({ ...prev, cctv002: false }));
+                          // 1초 후 재연결
+                          setTimeout(() => {
+                            initializeHLSStream('cctv002');
+                          }, 1000);
+                        }}
+                        className="mt-2 px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                      >
+                        재연결
+                      </button>
+                    </div>
+                  ) : (
+                    <video
+                      ref={(el) => { videoRefs.current.cctv002 = el; }}
+                      className="w-full h-full object-cover"
+                      controls
+                      autoPlay
+                      muted
+                      playsInline
+                      onLoadStart={() => setIsStreamLoading(prev => ({ ...prev, cctv002: true }))}
+                      onCanPlay={() => setIsStreamLoading(prev => ({ ...prev, cctv002: false }))}
+                      onError={(e) => {
+                        console.error('Video error (cctv002):', e);
+                        setStreamError(prev => ({ ...prev, cctv002: '비디오 스트림을 로드할 수 없습니다' }));
+                        setIsStreamLoading(prev => ({ ...prev, cctv002: false }));
+                      }}
+                    >
+                      <div className="text-white text-sm">브라우저가 비디오를 지원하지 않습니다.</div>
+                    </video>
+                  )}
+                </div>
+                <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                  B동 출입구
+                </div>
+                <div className="absolute top-2 left-2 flex space-x-1">
+                  <button
+                    onClick={() => toggleStreamPause('cctv002')}
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded"
+                    title={isStreamPaused.cctv002 ? '재개' : '일시정지'}
+                  >
+                    {isStreamPaused.cctv002 ? '▶️' : '⏸️'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      // 기존 스트림 완전 정리
+                      cleanupStream('cctv002');
+                      // 상태 초기화
+                      setStreamError(prev => ({ ...prev, cctv002: null }));
+                      setIsStreamLoading(prev => ({ ...prev, cctv002: true }));
+                      setIsStreamPaused(prev => ({ ...prev, cctv002: false }));
+                      // 1초 후 재연결
+                      setTimeout(() => {
+                        initializeHLSStream('cctv002');
+                      }, 1000);
+                    }}
+                    className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
+                    title="재연결"
+                  >
+                    🔄
+                  </button>
+                  <button
+                    onClick={() => cleanupStream('cctv002')}
+                    className="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
+                    title="정리"
+                  >
+                    🗑️
+                  </button>
+                </div>
+                <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                  {streamStats.cctv002.memoryUsage}MB | {streamStats.cctv002.frameCount}프레임
                 </div>
               </div>
                 
-              {/* LPG 저장소 */}
+              {/* LPG 저장소 - RTSP 스트림 */}
               <div className="relative">
-                <div className="bg-gray-200 rounded-lg h-[260px] flex items-center justify-center">
-                  <span className="text-gray-500 text-sm">LPG 저장소</span>
+                <div className="bg-gray-900 rounded-lg h-[260px] flex items-center justify-center relative overflow-hidden">
+                  {isStreamLoading.cctv003 && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+                      <div className="text-white text-sm">스트림 로딩 중...</div>
+                    </div>
+                  )}
+                  
+                  {streamError.cctv003 ? (
+                    <div className="text-red-400 text-sm text-center">
+                      <div className="mb-2">스트림 연결 실패</div>
+                      <div className="text-xs text-gray-400">{streamError.cctv003}</div>
+                      <button 
+                        onClick={() => {
+                          // 기존 스트림 완전 정리
+                          cleanupStream('cctv003');
+                          // 상태 초기화
+                          setStreamError(prev => ({ ...prev, cctv003: null }));
+                          setIsStreamLoading(prev => ({ ...prev, cctv003: true }));
+                          setIsStreamPaused(prev => ({ ...prev, cctv003: false }));
+                          // 1초 후 재연결
+                          setTimeout(() => {
+                            initializeHLSStream('cctv003');
+                          }, 1000);
+                        }}
+                        className="mt-2 px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                      >
+                        재연결
+                      </button>
+                    </div>
+                  ) : (
+                    <video
+                      ref={(el) => { videoRefs.current.cctv003 = el; }}
+                      className="w-full h-full object-cover"
+                      controls
+                      autoPlay
+                      muted
+                      playsInline
+                      onLoadStart={() => setIsStreamLoading(prev => ({ ...prev, cctv003: true }))}
+                      onCanPlay={() => setIsStreamLoading(prev => ({ ...prev, cctv003: false }))}
+                      onError={(e) => {
+                        console.error('Video error (cctv003):', e);
+                        setStreamError(prev => ({ ...prev, cctv003: '비디오 스트림을 로드할 수 없습니다' }));
+                        setIsStreamLoading(prev => ({ ...prev, cctv003: false }));
+                      }}
+                    >
+                      <div className="text-white text-sm">브라우저가 비디오를 지원하지 않습니다.</div>
+                    </video>
+                  )}
+                </div>
+                <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                  LPG 저장소
+                </div>
+                <div className="absolute top-2 left-2 flex space-x-1">
+                  <button
+                    onClick={() => toggleStreamPause('cctv003')}
+                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded"
+                    title={isStreamPaused.cctv003 ? '재개' : '일시정지'}
+                  >
+                    {isStreamPaused.cctv003 ? '▶️' : '⏸️'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      // 기존 스트림 완전 정리
+                      cleanupStream('cctv003');
+                      // 상태 초기화
+                      setStreamError(prev => ({ ...prev, cctv003: null }));
+                      setIsStreamLoading(prev => ({ ...prev, cctv003: true }));
+                      setIsStreamPaused(prev => ({ ...prev, cctv003: false }));
+                      // 1초 후 재연결
+                      setTimeout(() => {
+                        initializeHLSStream('cctv003');
+                      }, 1000);
+                    }}
+                    className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
+                    title="재연결"
+                  >
+                    🔄
+                  </button>
+                  <button
+                    onClick={() => cleanupStream('cctv003')}
+                    className="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
+                    title="정리"
+                  >
+                    🗑️
+                  </button>
+                </div>
+                <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                  {streamStats.cctv003.memoryUsage}MB | {streamStats.cctv003.frameCount}프레임
                 </div>
               </div>
             </div>
@@ -1059,6 +1597,16 @@ export default function Dashboard() {
                     <div className="flex items-center space-x-2">
                       <Wrench className="w-4 h-4" />
                       <span>장비 번호: {worker.equipmentId}</span>
+                    </div>
+                    <div className="flex items-center justify-center pt-2">
+                      <button
+                        onClick={() => handleVibrate(worker.equipmentId, worker.name)}
+                        className="flex items-center space-x-1 bg-orange-500 text-white px-3 py-1 rounded-md hover:bg-orange-600 transition-colors text-sm"
+                        title={`${worker.name}님의 장비에 진동 신호 보내기`}
+                      >
+                        <Vibrate className="w-4 h-4" />
+                        <span>진동</span>
+                      </button>
                     </div>
                   </div>
                 </div>
