@@ -1072,24 +1072,24 @@ export default function Dashboard() {
                   <Users className="w-8 h-8 text-blue-200" />
                   <p className="text-blue-100 text-sm">출근 작업자</p>
                 </div>
-                <div className="text-[35px] font-bold">{attendanceWorkers.length}명</div>
+                <div className="text-[35px] font-bold">{attendanceWorkers.length}</div>
               </div>
             </div>
 
             {/* 안전모 정상 착용 */}
             <div className="bg-white rounded-lg p-6 shadow-sm">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-600">안전모 정상 착용</span>
+                <span className="text-sm text-gray-600">안전모 미착용</span>
                 <Bell className="w-[40px] h-[40px] text-white bg-[#34D399] rounded-full p-1" />
               </div>
               
               
               <div className="flex items-center justify-between space-x-2">
-                <span className="text-[35px] font-bold">{attendanceWorkers.length}명</span>
-                <div>
+                <span className="text-[35px] font-bold">{attendanceWorkers.length}</span>
+                {/* <div>
                   <TrendingDown className="w-4 h-4 text-red-500" />
                   <span className="text-sm text-red-500">7.5% 전일 대비 감소</span>
-                </div>
+                </div> */}
               </div>
             </div>
 
@@ -1102,12 +1102,12 @@ export default function Dashboard() {
               
               <div className="flex items-center justify-between space-x-2">
                 <span className="text-[35px] font-bold">{gasSensorStats.critical + gasSensorStats.danger}</span>
-                <div>
+                {/* <div>
                   <TrendingUp className="w-4 h-4 text-red-500" />
                   <span className="text-sm text-red-500">
                     {gasSensorStats.critical > 0 ? '치명적' : gasSensorStats.danger > 0 ? '위험' : '정상'}
                   </span>
-                </div>
+                </div> */}
               </div>
             </div>
 
@@ -1220,7 +1220,7 @@ export default function Dashboard() {
           {/* 가스 누출 감지 센서 - 전체 너비 */}
           <div className="bg-white rounded-lg p-6 shadow-sm">
             <div className="flex justify-between">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">가스 누출 감지 센서</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">가스 누출 감지 센서 현황</h3>
                 {/* 범례 */}
                 <div className="flex items-center space-x-4 mb-4">
                     <div className="flex items-center space-x-2">
