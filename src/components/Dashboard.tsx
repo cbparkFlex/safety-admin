@@ -721,50 +721,54 @@ export default function Dashboard() {
         });
     }, 2000); // 2초 후 스트림 초기화 (CCTV 데이터 로드 대기)
 
-    // 시뮬레이션: 가스 누출 감지 알림 추가
-    const alertInterval = setInterval(() => {
-      const random = Math.random();
-      if (random < 0.05) { // 5% 확률로 위험 알림 생성
-        const buildings = ['A동', 'B동', 'C동', 'D동'];
-        const building = buildings[Math.floor(Math.random() * buildings.length)];
-        const sensorNumber = Math.floor(Math.random() * 20) + 1;
-        
-        addAlertMessage({
-          type: 'danger',
-          title: '가스 누출 감지',
-          message: `${building} ${sensorNumber}번 센서 '위험' 단계 감지`,
-          isActive: true,
-        });
-      } else if (random < 0.15) { // 10% 확률로 주의 알림 생성
-        const buildings = ['A동', 'B동', 'C동', 'D동'];
-        const building = buildings[Math.floor(Math.random() * buildings.length)];
-        const sensorNumber = Math.floor(Math.random() * 20) + 1;
-        
-        addAlertMessage({
-          type: 'warning',
-          title: '가스 누출 주의',
-          message: `${building} ${sensorNumber}번 센서 '주의' 단계 감지`,
-          isActive: true,
-        });
-      }
-    }, 30000); // 30초마다 체크
+     // 시뮬레이션: 가스 누출 감지 알림 추가 (테스트 도구가 펼쳐져 있을 때만)
+     const alertInterval = setInterval(() => {
+       if (isTestToolsExpanded) {
+         const random = Math.random();
+         if (random < 0.05) { // 5% 확률로 위험 알림 생성
+           const buildings = ['A동', 'B동', 'C동', 'D동'];
+           const building = buildings[Math.floor(Math.random() * buildings.length)];
+           const sensorNumber = Math.floor(Math.random() * 20) + 1;
+           
+           addAlertMessage({
+             type: 'danger',
+             title: '가스 누출 감지',
+             message: `${building} ${sensorNumber}번 센서 '위험' 단계 감지`,
+             isActive: true,
+           });
+         } else if (random < 0.15) { // 10% 확률로 주의 알림 생성
+           const buildings = ['A동', 'B동', 'C동', 'D동'];
+           const building = buildings[Math.floor(Math.random() * buildings.length)];
+           const sensorNumber = Math.floor(Math.random() * 20) + 1;
+           
+           addAlertMessage({
+             type: 'warning',
+             title: '가스 누출 주의',
+             message: `${building} ${sensorNumber}번 센서 '주의' 단계 감지`,
+             isActive: true,
+           });
+         }
+       }
+     }, 30000); // 30초마다 체크
 
-    // 시뮬레이션: 센서 정상화 알림
-    const normalInterval = setInterval(() => {
-      const random = Math.random();
-      if (random < 0.1) { // 10% 확률로 정상화 알림 생성
-        const buildings = ['A동', 'B동', 'C동', 'D동'];
-        const building = buildings[Math.floor(Math.random() * buildings.length)];
-        const sensorNumber = Math.floor(Math.random() * 20) + 1;
-        
-        addAlertMessage({
-          type: 'info',
-          title: '센서 정상화',
-          message: `${building} ${sensorNumber}번 센서 정상화`,
-          isActive: false,
-        });
-      }
-    }, 45000); // 45초마다 체크
+     // 시뮬레이션: 센서 정상화 알림 (테스트 도구가 펼쳐져 있을 때만)
+     const normalInterval = setInterval(() => {
+       if (isTestToolsExpanded) {
+         const random = Math.random();
+         if (random < 0.1) { // 10% 확률로 정상화 알림 생성
+           const buildings = ['A동', 'B동', 'C동', 'D동'];
+           const building = buildings[Math.floor(Math.random() * buildings.length)];
+           const sensorNumber = Math.floor(Math.random() * 20) + 1;
+           
+           addAlertMessage({
+             type: 'info',
+             title: '센서 정상화',
+             message: `${building} ${sensorNumber}번 센서 정상화`,
+             isActive: false,
+           });
+         }
+       }
+     }, 45000); // 45초마다 체크
 
     return () => {
       clearInterval(interval);
@@ -789,8 +793,8 @@ export default function Dashboard() {
           streamTimeouts.current[cameraId] = null;
         }
       });
-    };
-  }, []);
+     };
+   }, [isTestToolsExpanded]);
 
   // CCTV 스트림 변경 시 스트림 재초기화
   useEffect(() => {
@@ -1062,59 +1066,9 @@ export default function Dashboard() {
           
           <div className="grid grid-cols-6 gap-6">
             <div className="text-lg font-semibold col-span-3 text-gray-900">출근자 정보</div>
-            <div className="text-lg font-semibold text-gray-900">비상상황 기록</div>
-          </div>
-          <div className="grid grid-cols-6 gap-8">
-            {/* 출근 작업자 */}
-            <div className="bg-[#1E4E8B] text-white rounded-lg p-6">
-              <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <Users className="w-8 h-8 text-blue-200" />
-                  <p className="text-blue-100 text-sm">출근 작업자</p>
-                </div>
-                <div className="text-[35px] font-bold">{attendanceWorkers.length}</div>
-              </div>
-            </div>
-
-            {/* 안전모 정상 착용 */}
-            <div className="bg-white rounded-lg p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-600">안전모 미착용</span>
-                <Bell className="w-[40px] h-[40px] text-white bg-[#34D399] rounded-full p-1" />
-              </div>
-              
-              
-              <div className="flex items-center justify-between space-x-2">
-                <span className="text-[35px] font-bold">{attendanceWorkers.length}</span>
-                {/* <div>
-                  <TrendingDown className="w-4 h-4 text-red-500" />
-                  <span className="text-sm text-red-500">7.5% 전일 대비 감소</span>
-                </div> */}
-              </div>
-            </div>
-
-            {/* 가스 누출 감지 */}
-            <div className="bg-white rounded-lg p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-600">가스 누출 감지</span>
-                <Bell className="w-[40px] h-[40px] text-white bg-[#F25959] rounded-full p-1" />
-              </div>
-              
-              <div className="flex items-center justify-between space-x-2">
-                <span className="text-[35px] font-bold">{gasSensorStats.critical + gasSensorStats.danger}</span>
-                {/* <div>
-                  <TrendingUp className="w-4 h-4 text-red-500" />
-                  <span className="text-sm text-red-500">
-                    {gasSensorStats.critical > 0 ? '치명적' : gasSensorStats.danger > 0 ? '위험' : '정상'}
-                  </span>
-                </div> */}
-              </div>
-            </div>
-
-            {/* 비상상황 기록 */}
-            <div className="col-span-3 bg-white rounded-lg p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-800">비상상황 기록</h3>
+            <div className="col-span-3 flex items-center">
+              <div className="text-lg font-semibold text-gray-900">비상상황 기록</div>
+              <div className="flex ml-4">
                 <div className="flex items-center gap-2">
                   <button 
                     onClick={fetchEmergencyRecords}
@@ -1131,6 +1085,57 @@ export default function Dashboard() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-6 gap-8">
+            {/* 출근 작업자 */}
+            <div className="bg-[#1E4E8B] text-white rounded-lg p-6">
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <Users className="w-8 h-8 text-blue-200" />
+                  <p className="text-blue-100 text-sm">출근 작업자</p>
+                </div>
+                <div className="text-[35px] font-bold">{attendanceWorkers.length} <span className="text-[20px]">명</span></div>
+              </div>
+            </div>
+
+            {/* 안전모 정상 착용 */}
+            <div className="bg-white rounded-lg p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-600">안전모 착용</span>
+                <Bell className="w-[40px] h-[40px] text-white bg-[#34D399] rounded-full p-1" />
+              </div>
+              
+              
+              <div className="flex items-center justify-between space-x-2">
+                <span className="text-[35px] font-bold">{attendanceWorkers.length} <span className="text-[20px] text-gray-600">명</span></span>
+                {/* <div>
+                  <TrendingDown className="w-4 h-4 text-red-500" />
+                  <span className="text-sm text-red-500">7.5% 전일 대비 감소</span>
+                </div> */}
+              </div>
+            </div>
+
+            {/* 가스 누출 감지 */}
+            <div className="bg-white rounded-lg p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-600">안전모 미착용 감지</span>
+                <Bell className="w-[40px] h-[40px] text-white bg-[#F25959] rounded-full p-1" />
+              </div>
+              
+              <div className="flex items-center justify-between space-x-2">
+                <span className="text-[35px] font-bold">{gasSensorStats.critical + gasSensorStats.danger} <span className="text-[20px] text-gray-600">건</span></span>
+                {/* <div>
+                  <TrendingUp className="w-4 h-4 text-red-500" />
+                  <span className="text-sm text-red-500">
+                    {gasSensorStats.critical > 0 ? '치명적' : gasSensorStats.danger > 0 ? '위험' : '정상'}
+                  </span>
+                </div> */}
+              </div>
+            </div>
+
+            {/* 비상상황 기록 */}
+            <div className="col-span-3 bg-white rounded-lg p-6 shadow-sm">
               <div className="max-h-48 overflow-y-auto space-y-3 pr-2">
                 {emergencyRecords.length > 0 ? (
                   emergencyRecords.map((record, index) => {
@@ -1726,7 +1731,7 @@ export default function Dashboard() {
                     </div>
                     <div className="flex items-center space-x-2">
                       <Wrench className="w-4 h-4" />
-                      <span>장비 번호: {worker.equipmentId}</span>
+                      <span>장비 번호: {worker.equipmentId?.replace('BEACON_', '') || worker.equipmentId}</span>
                     </div>
                     <div className="flex items-center justify-center pt-2">
                       <button
