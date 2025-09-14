@@ -45,31 +45,6 @@ model Administrator {
   @@map("administrators")
 }
 
-model Sensor {
-  id        Int      @id @default(autoincrement())
-  sensorId  String   @unique @map("sensor_id")
-  name      String
-  type      String
-  location  String
-  status    String   @default("active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@map("sensors")
-}
-
-model CCTV {
-  id        Int      @id @default(autoincrement())
-  cameraId  String   @unique @map("camera_id")
-  name      String
-  location  String
-  ipAddress String   @map("ip_address")
-  status    String   @default("active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@map("cctv")
-}
 
 model MonitoringLog {
   id        Int      @id @default(autoincrement())
@@ -340,4 +315,19 @@ model GasSensorMapping {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("gas_sensor_mappings")
+}
+
+// CCTV 감지 데이터
+model CctvDetection {
+  id        Int      @id @default(autoincrement())
+  cctvName  String   @map("cctv_name") // A, B, LPG
+  status    String   // fallen, fire, head
+  timestamp DateTime // 감지 시간
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // 인덱스 추가 (성능 최적화)
+  @@index([cctvName, timestamp])
+  @@index([status, timestamp])
+  @@index([timestamp])
+  @@map("cctv_detections")
 }
