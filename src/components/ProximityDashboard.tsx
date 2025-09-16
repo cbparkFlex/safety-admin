@@ -185,7 +185,7 @@ export default function ProximityDashboard() {
     }
   };
 
-  const handleVibrateBeacon = async (beaconId: string) => {
+  const handleVibrateBeacon = async (beaconId: string, gatewayId: string) => {
     try {
       // 진동 중인 비콘 목록에 추가
       setVibratingBeacons(prev => new Set(prev).add(beaconId));
@@ -197,6 +197,7 @@ export default function ProximityDashboard() {
         },
         body: JSON.stringify({
           beaconId: beaconId,
+          gatewayId: gatewayId,
           ringType: 4, // 0x4: vibration
           ringTime: 4000, // 1초
         }),
@@ -627,7 +628,7 @@ export default function ProximityDashboard() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <button
-                          onClick={() => handleVibrateBeacon(beacon.beaconId)}
+                          onClick={() => handleVibrateBeacon(beacon.beaconId, gateway.gatewayId)}
                           disabled={vibratingBeacons.has(beacon.beaconId)}
                           className={`inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md transition-colors ${
                             vibratingBeacons.has(beacon.beaconId)
