@@ -469,11 +469,23 @@ async function processBeaconMessage(messageData: BeaconMessage) {
 
     // 히스토리 상태 로그 제거됨 (스무딩 제거로 불필요)
     
+    // Gateway 설정 조회 (근접 경고 거리 및 자동 진동 설정)
+    const gateway = await prisma.gateway.findUnique({
+      where: { gatewayId: messageData.gatewayId },
+      select: {
+        proximityThreshold: true,
+        autoVibration: true,
+        name: true
+      }
+    });
+    
+    const proximityThreshold = gateway?.proximityThreshold || 5.0;
+    
     // 근접 알림 여부 판단
-    const isAlert = shouldAlert(smoothedDistance, 5.0); // 5m 임계값
+    const isAlert = shouldAlert(smoothedDistance, proximityThreshold);
     const dangerLevel = getDangerLevel(smoothedDistance);
     
-    console.log(`알림 판단: 거리=${smoothedDistance.toFixed(2)}m, 임계값=5.0m, 알림=${isAlert}, 위험도=${dangerLevel}`);
+    console.log(`알림 판단: 거리=${smoothedDistance.toFixed(2)}m, 임계값=${proximityThreshold}m, 알림=${isAlert}, 위험도=${dangerLevel}`);
 
     // ProximityAlert 데이터 생성
     const alertData: ProximityAlertData = {
@@ -481,7 +493,7 @@ async function processBeaconMessage(messageData: BeaconMessage) {
       gatewayId: messageData.gatewayId,
       rssi: smoothedRSSI, // 스무딩된 RSSI 사용
       distance: smoothedDistance, // 스무딩된 거리 사용
-      threshold: 5.0,
+      threshold: proximityThreshold,
       isAlert,
       dangerLevel,
       timestamp: new Date(messageData.timestamp)
@@ -527,6 +539,42 @@ async function saveProximityAlert(alertData: ProximityAlertData) {
  */
 async function handleProximityAlert(alertData: ProximityAlertData) {
   try {
+    // Gateway 설정 조회 (자동 진동 알림 확인)
+    const gateway = await prisma.gateway.findUnique({
+      where: { gatewayId: alertData.gatewayId },
+      select: {
+        autoVibration: true,
+        name: true
+      }
+    });
+
+    // 자동 진동 알림 처리
+    if (gateway?.autoVibration) {
+      try {
+        // 자동 진동 알림 API 호출
+        const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/auto-vibration`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            beaconId: alertData.beaconId,
+            gatewayId: alertData.gatewayId,
+            distance: alertData.distance,
+            rssi: alertData.rssi
+          }),
+        });
+
+        if (response.ok) {
+          console.log(`자동 진동 알림 전송: ${alertData.beaconId} (${gateway.name}, ${alertData.distance.toFixed(2)}m, 임계값=${alertData.threshold}m)`);
+        } else {
+          console.error(`자동 진동 알림 전송 실패: ${alertData.beaconId}`);
+        }
+      } catch (error) {
+        console.error(`자동 진동 알림 처리 실패 (${alertData.beaconId}):`, error);
+      }
+    }
+
     // 모니터링 로그에 기록
     await prisma.monitoringLog.create({
       data: {
