@@ -68,8 +68,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 진동 명령 전송 (테스트용 - 로그만 기록)
+    // 진동 명령 전송 (MQTT를 통해 실제 진동 명령 전송)
     console.log(`자동 진동 알림: ${beacon.name} (${gateway.name}, ${distance.toFixed(2)}m)`);
+    
+    try {
+      // MQTT를 통해 실제 진동 명령 전송
+      const { sendBeaconCommand } = await import('@/lib/mqttClient');
+      
+      const ringCommand = {
+        msg: "ring",
+        mac: beacon.macAddress.replace(/:/g, ''), // KBeacon MAC 주소 (콜론 제거)
+        ringType: 4, // 0x4: vibration
+        ringTime: 3000, // 3초
+        ledOn: 500,
+        ledOff: 1500,
+      };
+
+      const commandSent = await sendBeaconCommand(beaconId, ringCommand, gatewayId);
+      
+      if (commandSent) {
+        console.log(`MQTT 진동 명령 전송 성공: ${beacon.name} (${gateway.name})`);
+      } else {
+        console.error(`MQTT 진동 명령 전송 실패: ${beacon.name} (${gateway.name})`);
+      }
+    } catch (error) {
+      console.error(`MQTT 진동 명령 전송 중 오류: ${beacon.name}`, error);
+    }
 
     // 근접 알림 기록 생성
     await prisma.proximityAlert.create({
