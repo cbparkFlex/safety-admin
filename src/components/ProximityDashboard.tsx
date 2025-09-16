@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { AlertTriangle, MapPin, Wifi, Clock, Users, Activity, RefreshCw, CheckCircle, XCircle, Trash2, Settings, Smartphone } from "lucide-react";
+import { AlertTriangle, MapPin, Wifi, Clock, Users, Activity, RefreshCw, CheckCircle, XCircle, Trash2, Settings, Smartphone, Bell, BellOff, Edit3 } from "lucide-react";
 
 interface BeaconStatus {
   beaconId: string;
@@ -25,6 +25,8 @@ interface GatewayBeaconStatus {
   gatewayLocation: string;
   beacons: BeaconStatus[];
   lastUpdate: Date;
+  proximityThreshold?: number;
+  autoVibration?: boolean;
 }
 
 interface DashboardStats {
@@ -53,6 +55,8 @@ export default function ProximityDashboard() {
   const [mqttConnecting, setMqttConnecting] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [reloadingCalibration, setReloadingCalibration] = useState(false);
+  const [editingGateway, setEditingGateway] = useState<string | null>(null);
+  const [gatewaySettings, setGatewaySettings] = useState<{[key: string]: {proximityThreshold: number, autoVibration: boolean}}>({});
 
   useEffect(() => {
     fetchData();
@@ -71,6 +75,9 @@ export default function ProximityDashboard() {
       if (gatewayStatusResponse.ok) {
         const gatewayStatusData = await gatewayStatusResponse.json();
         setGatewayStatuses(gatewayStatusData.data);
+        
+        // Gateway 설정 정보도 함께 가져오기
+        await fetchGatewaySettings(gatewayStatusData.data);
       }
 
       if (statsResponse.ok) {
@@ -81,6 +88,38 @@ export default function ProximityDashboard() {
       console.error("데이터 조회 실패:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchGatewaySettings = async (gateways: GatewayBeaconStatus[]) => {
+    try {
+      const settingsPromises = gateways.map(async (gateway) => {
+        const response = await fetch(`/api/gateways/${gateway.gatewayId}/settings`);
+        if (response.ok) {
+          const data = await response.json();
+          return {
+            gatewayId: gateway.gatewayId,
+            settings: data.gateway
+          };
+        }
+        return null;
+      });
+
+      const settingsResults = await Promise.all(settingsPromises);
+      const newSettings: {[key: string]: {proximityThreshold: number, autoVibration: boolean}} = {};
+      
+      settingsResults.forEach(result => {
+        if (result) {
+          newSettings[result.gatewayId] = {
+            proximityThreshold: result.settings.proximityThreshold,
+            autoVibration: result.settings.autoVibration
+          };
+        }
+      });
+
+      setGatewaySettings(newSettings);
+    } catch (error) {
+      console.error("Gateway 설정 조회 실패:", error);
     }
   };
 
@@ -183,6 +222,46 @@ export default function ProximityDashboard() {
         });
       }, 1000);
     }
+  };
+
+  const updateGatewaySettings = async (gatewayId: string, settings: {proximityThreshold: number, autoVibration: boolean}) => {
+    try {
+      const response = await fetch(`/api/gateways/${gatewayId}/settings`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(settings),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setGatewaySettings(prev => ({
+          ...prev,
+          [gatewayId]: result.gateway
+        }));
+        setEditingGateway(null);
+        alert('Gateway 설정이 업데이트되었습니다.');
+      } else {
+        const error = await response.json();
+        alert(`설정 업데이트 실패: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Gateway 설정 업데이트 실패:', error);
+      alert('설정 업데이트 중 오류가 발생했습니다.');
+    }
+  };
+
+  const toggleAutoVibration = async (gatewayId: string) => {
+    const currentSettings = gatewaySettings[gatewayId];
+    if (!currentSettings) return;
+
+    const newSettings = {
+      ...currentSettings,
+      autoVibration: !currentSettings.autoVibration
+    };
+
+    await updateGatewaySettings(gatewayId, newSettings);
   };
 
   const clearProximityAlerts = async () => {
@@ -410,8 +489,47 @@ export default function ProximityDashboard() {
                     {gateway.gatewayLocation}
                   </p>
                 </div>
-                <div className="text-sm text-gray-500">
-                  마지막 업데이트: {new Date(gateway.lastUpdate).toLocaleString('ko-KR')}
+                <div className="flex items-center gap-4">
+                  {/* Gateway 설정 정보 */}
+                  {gatewaySettings[gateway.gatewayId] && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-600">
+                        근접 경고: {gatewaySettings[gateway.gatewayId].proximityThreshold}m
+                      </span>
+                      <button
+                        onClick={() => toggleAutoVibration(gateway.gatewayId)}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors ${
+                          gatewaySettings[gateway.gatewayId].autoVibration
+                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                        title={gatewaySettings[gateway.gatewayId].autoVibration ? '자동 진동 알림 활성화됨' : '자동 진동 알림 비활성화됨'}
+                      >
+                        {gatewaySettings[gateway.gatewayId].autoVibration ? (
+                          <>
+                            <Bell className="w-3 h-3" />
+                            자동 진동 ON
+                          </>
+                        ) : (
+                          <>
+                            <BellOff className="w-3 h-3" />
+                            자동 진동 OFF
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => setEditingGateway(gateway.gatewayId)}
+                        className="flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
+                        title="Gateway 설정 편집"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        설정
+                      </button>
+                    </div>
+                  )}
+                  <div className="text-sm text-gray-500">
+                    마지막 업데이트: {new Date(gateway.lastUpdate).toLocaleString('ko-KR')}
+                  </div>
                 </div>
               </div>
             </div>
@@ -540,6 +658,89 @@ export default function ProximityDashboard() {
           </div>
         )}
       </div>
+
+      {/* Gateway 설정 편집 모달 */}
+      {editingGateway && gatewaySettings[editingGateway] && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-96 max-w-full mx-4">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">
+              Gateway 설정 편집
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Gateway 이름
+                </label>
+                <div className="text-sm text-gray-600">
+                  {gatewayStatuses.find(g => g.gatewayId === editingGateway)?.gatewayName}
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  근접 경고 거리 (미터)
+                </label>
+                <input
+                  type="number"
+                  min="0.1"
+                  max="100"
+                  step="0.1"
+                  value={gatewaySettings[editingGateway].proximityThreshold}
+                  onChange={(e) => setGatewaySettings(prev => ({
+                    ...prev,
+                    [editingGateway]: {
+                      ...prev[editingGateway],
+                      proximityThreshold: parseFloat(e.target.value) || 5.0
+                    }
+                  }))}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  비콘이 이 거리 이내로 접근하면 알림이 발생합니다.
+                </p>
+              </div>
+
+              <div>
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={gatewaySettings[editingGateway].autoVibration}
+                    onChange={(e) => setGatewaySettings(prev => ({
+                      ...prev,
+                      [editingGateway]: {
+                        ...prev[editingGateway],
+                        autoVibration: e.target.checked
+                      }
+                    }))}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="ml-2 text-sm font-medium text-gray-700">
+                    자동 진동 알림 활성화
+                  </span>
+                </label>
+                <p className="text-xs text-gray-500 mt-1">
+                  근접 경고 거리 이내로 비콘이 접근하면 자동으로 진동 알림을 전송합니다.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setEditingGateway(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={() => updateGatewaySettings(editingGateway, gatewaySettings[editingGateway])}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+              >
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

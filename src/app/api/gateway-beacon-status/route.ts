@@ -75,9 +75,35 @@ export async function GET(request: NextRequest) {
           };
         }
 
+        // Gateway별 근접 경고 거리 가져오기
+        const proximityThreshold = gateway.proximityThreshold || 5.0;
+        
         // 위험도 판단
         const dangerLevel = getDangerLevel(currentDistance || 999);
-        const isAlert = shouldAlert(currentDistance || 999, 5.0);
+        const isAlert = shouldAlert(currentDistance || 999, proximityThreshold);
+
+        // 자동 진동 알림 처리
+        if (currentDistance !== null && isAlert && gateway.autoVibration) {
+          try {
+            // 자동 진동 알림 API 호출 (비동기로 처리하여 메인 로직에 영향 없도록)
+            fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/auto-vibration`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                beaconId: beacon.beaconId,
+                gatewayId: gateway.gatewayId,
+                distance: currentDistance,
+                rssi: latestRSSI
+              }),
+            }).catch(error => {
+              console.error(`자동 진동 알림 처리 실패 (${beacon.beaconId}):`, error);
+            });
+          } catch (error) {
+            console.error(`자동 진동 알림 처리 실패 (${beacon.beaconId}):`, error);
+          }
+        }
 
         beaconStatuses.push({
           beaconId: beacon.beaconId,

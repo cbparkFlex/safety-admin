@@ -91,6 +91,8 @@ model Gateway {
   ipAddress   String?  @map("ip_address")
   mqttTopic   String?  @map("mqtt_topic")
   status      String   @default("active")
+  proximityThreshold Float @default(5.0) @map("proximity_threshold") // 근접 경고 거리 (미터)
+  autoVibration Boolean @default(false) @map("auto_vibration") // 자동 진동 알림 활성화
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
@@ -107,10 +109,12 @@ model ProximityAlert {
   beaconId    String   @map("beacon_id")
   gatewayId   String   @map("gateway_id")
   workerId    Int?     @map("worker_id")
-  rssi        Int
+  rssi        Int?
   distance    Float
   threshold   Float    @default(5.0) // 5m 기본값
   isAlert     Boolean  @default(false) @map("is_alert")
+  alertType   String?  @map("alert_type") // 알림 타입 (auto_vibration, manual, etc.)
+  message     String?  // 알림 메시지
   alertTime   DateTime? @map("alert_time")
   createdAt   DateTime @default(now()) @map("created_at")
 
