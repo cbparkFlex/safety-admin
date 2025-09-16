@@ -31,9 +31,17 @@ export async function GET(request: NextRequest) {
   try {
     console.log("📊 Gateway별 Beacon 상태 조회 시작");
     
-    // 모든 활성 Gateway 조회
+    // 모든 활성 Gateway 조회 (설정 정보 포함)
     const gateways = await prisma.gateway.findMany({
       where: { status: 'active' },
+      select: {
+        id: true,
+        gatewayId: true,
+        name: true,
+        location: true,
+        proximityThreshold: true,
+        autoVibration: true
+      },
       orderBy: { name: 'asc' }
     });
 
@@ -81,9 +89,15 @@ export async function GET(request: NextRequest) {
         // 위험도 판단
         const dangerLevel = getDangerLevel(currentDistance || 999);
         const isAlert = shouldAlert(currentDistance || 999, proximityThreshold);
+        
+        // 디버그 로그 추가
+        if (currentDistance !== null) {
+          console.log(`알림 판단: 거리=${currentDistance.toFixed(2)}m, 임계값=${proximityThreshold}m, 알림=${isAlert}, 위험도=${dangerLevel}`);
+        }
 
         // 자동 진동 알림 처리
         if (currentDistance !== null && isAlert && gateway.autoVibration) {
+          console.log(`자동 진동 알림 조건 만족: ${beacon.name} (${gateway.name}, ${currentDistance.toFixed(2)}m, 임계값=${proximityThreshold}m)`);
           try {
             // 자동 진동 알림 API 호출 (비동기로 처리하여 메인 로직에 영향 없도록)
             fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/auto-vibration`, {
@@ -103,6 +117,8 @@ export async function GET(request: NextRequest) {
           } catch (error) {
             console.error(`자동 진동 알림 처리 실패 (${beacon.beaconId}):`, error);
           }
+        } else if (currentDistance !== null && isAlert && !gateway.autoVibration) {
+          console.log(`자동 진동 알림 비활성화: ${beacon.name} (${gateway.name}, ${currentDistance.toFixed(2)}m, 임계값=${proximityThreshold}m)`);
         }
 
         beaconStatuses.push({
