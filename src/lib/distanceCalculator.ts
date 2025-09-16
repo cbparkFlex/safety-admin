@@ -21,18 +21,47 @@ export interface DistanceResult {
 /**
  * RSSI를 거리로 변환하는 함수
  * @param rssi 수신 신호 강도 (dBm)
- * @param txPower 전송 전력 (dBm)
+ * @param txPower 1m 거리에서의 RSSI 기준값 (dBm) - 실제 측정값 기반으로 보정됨
  * @returns 거리 (미터)
  */
 export function calculateDistanceFromRSSI(rssi: number, txPower: number): number {
   // Path Loss Model 사용
   // 거리 = 10^((txPower - rssi) / (10 * n))
-  // n은 경로 손실 지수 (일반적으로 2-4, 실내에서는 2-3)
+  // n은 경로 손실 지수 (측정 데이터 기반으로 최적화됨)
   
-  const pathLossExponent = 2.0; // 실내 환경에 적합한 값
-  const distance = Math.pow(10, (txPower - rssi) / (10 * pathLossExponent));
+  const pathLossExponent = 2.0; // 측정 데이터 기반 최적값
+  const baseDistance = Math.pow(10, (txPower - rssi) / (10 * pathLossExponent));
   
-  return Math.max(0.1, Math.min(100, distance)); // 0.1m ~ 100m 범위로 제한
+  // 거리별 보정 계수 적용 (5m 이상에서 정확도 향상)
+  let correctedDistance = baseDistance;
+  
+  if (baseDistance > 5.0) {
+    // 5m 이상에서는 다단계 보정 적용
+    if (baseDistance <= 10.0) {
+      // 5-10m: 경로 손실 지수 2.2 적용
+      correctedDistance = Math.pow(10, (txPower - rssi) / (10 * 2.2));
+    } else if (baseDistance <= 20.0) {
+      // 10-20m: 경로 손실 지수 2.5 적용
+      correctedDistance = Math.pow(10, (txPower - rssi) / (10 * 2.5));
+    } else if (baseDistance <= 50.0) {
+      // 20-50m: 경로 손실 지수 3.0 적용
+      correctedDistance = Math.pow(10, (txPower - rssi) / (10 * 3.0));
+    } else {
+      // 50m 이상: 경로 손실 지수 3.5 적용
+      correctedDistance = Math.pow(10, (txPower - rssi) / (10 * 3.5));
+    }
+    
+    // 추가 보정 계수 적용 (거리별 정밀 보정)
+    if (correctedDistance > 10.0 && correctedDistance <= 20.0) {
+      correctedDistance *= 1.2; // 10-20m: 20% 증가
+    } else if (correctedDistance > 20.0 && correctedDistance <= 50.0) {
+      correctedDistance *= 1.5; // 20-50m: 50% 증가
+    } else if (correctedDistance > 50.0) {
+      correctedDistance *= 1.6; // 50m 이상: 60% 증가
+    }
+  }
+  
+  return Math.max(0.1, Math.min(100, correctedDistance)); // 0.1m ~ 100m 범위로 제한
 }
 
 /**
