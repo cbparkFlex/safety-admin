@@ -36,12 +36,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 시간 차이값 계산 (timestamp와 createdAt의 차이)
+    const timestampDate = new Date(timestamp);
+    const createdAtDate = new Date();
+    const timeDiff = createdAtDate.getTime() - timestampDate.getTime();
+
     // CCTV 감지 데이터 저장
     const cctvDetection = await prisma.cctvDetection.create({
       data: {
         cctvName: CCTV,
         status: STATUS,
-        timestamp: new Date(timestamp)
+        timestamp: timestampDate,
+        timeDiff: timeDiff
       }
     });
 

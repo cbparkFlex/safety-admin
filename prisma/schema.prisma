@@ -301,6 +301,7 @@ model GasSensorData {
   level     String   // 위험도 레벨 (GAS_SAFE, GAS_WARNING, GAS_DANGER, GAS_CRITICAL)
   timestamp DateTime // 측정 시간
   createdAt DateTime @default(now()) @map("created_at")
+  timeDiff  Int?     @map("time_diff") // timestamp와 createdAt의 차이값 (밀리초)
 
   // 인덱스 추가 (성능 최적화)
   @@index([building, timestamp])
@@ -328,6 +329,7 @@ model CctvDetection {
   status    String   // fallen, fire, head
   timestamp DateTime // 감지 시간
   createdAt DateTime @default(now()) @map("created_at")
+  timeDiff  Int?     @map("time_diff") // timestamp와 createdAt의 차이값 (밀리초)
 
   // 인덱스 추가 (성능 최적화)
   @@index([cctvName, timestamp])

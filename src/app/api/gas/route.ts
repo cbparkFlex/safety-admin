@@ -18,6 +18,11 @@ export async function POST(request: NextRequest) {
     // 센서 ID에서 건물 추출 (예: "A_1" -> building: "A")
     const building = sensor.split('_')[0] || 'Unknown';
 
+    // 시간 차이값 계산 (timestamp와 createdAt의 차이)
+    const timestampDate = new Date(timestamp);
+    const createdAtDate = new Date();
+    const timeDiff = createdAtDate.getTime() - timestampDate.getTime();
+
     // 가스 센서 데이터 저장
     const gasSensorData = await prisma.gasSensorData.create({
       data: {
@@ -25,7 +30,8 @@ export async function POST(request: NextRequest) {
         building: building,
         value: parseFloat(value),
         level: level,
-        timestamp: new Date(timestamp)
+        timestamp: timestampDate,
+        timeDiff: timeDiff
       }
     });
 

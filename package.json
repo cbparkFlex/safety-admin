@@ -10,6 +10,7 @@
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:seed": "node scripts/seed.js",
+    "db:seed:beacon-gateway": "node scripts/seed-beacon-gateway.js",
     "db:studio": "prisma studio"
   },
   "dependencies": {
