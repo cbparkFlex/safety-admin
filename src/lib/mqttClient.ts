@@ -470,7 +470,7 @@ async function processBeaconMessage(messageData: BeaconMessage) {
     // 히스토리 상태 로그 제거됨 (스무딩 제거로 불필요)
     
     // Gateway 설정 조회 (근접 경고 거리 및 자동 진동 설정)
-    const gateway = await prisma.gateway.findUnique({
+    const gatewaySettings = await prisma.gateway.findUnique({
       where: { gatewayId: messageData.gatewayId },
       select: {
         proximityThreshold: true,
@@ -479,7 +479,7 @@ async function processBeaconMessage(messageData: BeaconMessage) {
       }
     });
     
-    const proximityThreshold = gateway?.proximityThreshold || 5.0;
+    const proximityThreshold = gatewaySettings?.proximityThreshold || 5.0;
     
     // 근접 알림 여부 판단
     const isAlert = shouldAlert(smoothedDistance, proximityThreshold);
@@ -540,7 +540,7 @@ async function saveProximityAlert(alertData: ProximityAlertData) {
 async function handleProximityAlert(alertData: ProximityAlertData) {
   try {
     // Gateway 설정 조회 (자동 진동 알림 확인)
-    const gateway = await prisma.gateway.findUnique({
+    const gatewayConfig = await prisma.gateway.findUnique({
       where: { gatewayId: alertData.gatewayId },
       select: {
         autoVibration: true,
@@ -549,7 +549,7 @@ async function handleProximityAlert(alertData: ProximityAlertData) {
     });
 
     // 자동 진동 알림 처리
-    if (gateway?.autoVibration) {
+    if (gatewayConfig?.autoVibration) {
       try {
         // 자동 진동 알림 API 호출
         const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/auto-vibration`, {
@@ -566,7 +566,7 @@ async function handleProximityAlert(alertData: ProximityAlertData) {
         });
 
         if (response.ok) {
-          console.log(`자동 진동 알림 전송: ${alertData.beaconId} (${gateway.name}, ${alertData.distance.toFixed(2)}m, 임계값=${alertData.threshold}m)`);
+          console.log(`자동 진동 알림 전송: ${alertData.beaconId} (${gatewayConfig.name}, ${alertData.distance.toFixed(2)}m, 임계값=${alertData.threshold}m)`);
         } else {
           console.error(`자동 진동 알림 전송 실패: ${alertData.beaconId}`);
         }
