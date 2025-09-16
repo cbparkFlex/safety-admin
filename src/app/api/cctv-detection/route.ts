@@ -9,6 +9,7 @@ export async function POST(request: NextRequest) {
 
     // 필수 필드 검증
     if (!timestamp || !CCTV || !STATUS) {
+      console.log("❌ 필수 필드 누락 - timestamp:", !!timestamp, "CCTV:", !!CCTV, "STATUS:", !!STATUS);
       return NextResponse.json(
         { success: false, error: "필수 필드가 누락되었습니다. (timestamp, CCTV, STATUS)" },
         { status: 400 }
@@ -16,19 +17,21 @@ export async function POST(request: NextRequest) {
     }
 
     // CCTV 이름과 상태 유효성 검증
-    const validCCTVNames = ['A', 'B', 'LPG'];
-    const validStatuses = ['fallen', 'fire', 'head'];
+    const validCCTVNames = ['cam1', 'cam2', 'cam3'];
+    const validStatuses = ['fallen', 'flame', 'head'];
 
     if (!validCCTVNames.includes(CCTV)) {
+      console.log("❌ 유효하지 않은 CCTV 이름:", CCTV, "유효한 값:", validCCTVNames);
       return NextResponse.json(
-        { success: false, error: "유효하지 않은 CCTV 이름입니다. (A, B, LPG 중 하나)" },
+        { success: false, error: "유효하지 않은 CCTV 이름입니다. (cam1, cam2, cam3 중 하나)" },
         { status: 400 }
       );
     }
 
     if (!validStatuses.includes(STATUS)) {
+      console.log("❌ 유효하지 않은 STATUS:", STATUS, "유효한 값:", validStatuses);
       return NextResponse.json(
-        { success: false, error: "유효하지 않은 상태입니다. (fallen, fire, head 중 하나)" },
+        { success: false, error: "유효하지 않은 상태입니다. (fallen, flame, head 중 하나)" },
         { status: 400 }
       );
     }
@@ -46,7 +49,7 @@ export async function POST(request: NextRequest) {
     if (STATUS === 'head') {
       // 작업자 안전장구 미착용 비상상황
       await createEmergencyIncident('safety_equipment', CCTV, timestamp);
-    } else if (STATUS === 'fire') {
+    } else if (STATUS === 'flame') {
       // LPG CCTV 내 폭발감지 비상상황
       await createEmergencyIncident('lpg_explosion', CCTV, timestamp);
     }

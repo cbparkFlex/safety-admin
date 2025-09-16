@@ -708,10 +708,11 @@ function RealTimeMeasurementForm({
       const response = await fetch("/api/beacons");
       if (response.ok) {
         const data = await response.json();
-        setBeacons(data);
+        setBeacons(data.beacons || []);
       }
     } catch (error) {
       console.error("Beacon 목록 조회 실패:", error);
+      setBeacons([]);
     }
   };
 
@@ -743,7 +744,7 @@ function RealTimeMeasurementForm({
                 required
               >
                 <option value="">Beacon 선택</option>
-                {beacons.map((beacon) => (
+                {Array.isArray(beacons) && beacons.map((beacon) => (
                   <option key={beacon.id} value={beacon.beaconId}>
                     {beacon.name} ({beacon.beaconId})
                   </option>

@@ -70,13 +70,13 @@ model Beacon {
   minor       Int
   txPower     Int      @map("tx_power")
   location    String?
-  gatewayId   String   @map("gateway_id")
+  gatewayId   String?  @map("gateway_id")
   status      String   @default("active")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   // Relations
-  gateway     Gateway  @relation(fields: [gatewayId], references: [gatewayId])
+  gateway     Gateway? @relation(fields: [gatewayId], references: [gatewayId])
   proximityAlerts ProximityAlert[]
   rssiCalibrations RssiCalibration[]
 
