@@ -9,7 +9,7 @@ export async function GET() {
       },
       orderBy: { createdAt: "desc" },
     });
-    return NextResponse.json({ success: true, beacons });
+    return NextResponse.json({ success: true, data: beacons });
   } catch (error) {
     console.error("비콘 목록 조회 실패:", error);
     return NextResponse.json(
