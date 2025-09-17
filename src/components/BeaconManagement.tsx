@@ -51,11 +51,20 @@ export default function BeaconManagement() {
     try {
       const response = await fetch("/api/beacons");
       if (response.ok) {
-        const data = await response.json();
-        setBeacons(data.beacons || []);
+        const result = await response.json();
+        if (result.success) {
+          setBeacons(result.data || []);
+        } else {
+          console.error("API 응답 오류:", result.error);
+          setBeacons([]);
+        }
+      } else {
+        console.error("HTTP 오류:", response.status);
+        setBeacons([]);
       }
     } catch (error) {
       console.error("비콘 목록 조회 실패:", error);
+      setBeacons([]);
     }
   };
 
@@ -187,61 +196,83 @@ export default function BeaconManagement() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {beacons.map((beacon) => (
-                <tr key={beacon.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">
-                        {beacon.name}
+              {beacons.length > 0 ? (
+                beacons.map((beacon) => (
+                  <tr key={beacon.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">
+                          {beacon.name}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          ID: {beacon.beaconId}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          MAC: {beacon.macAddress}
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-500">
-                        ID: {beacon.beaconId}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center text-sm text-gray-900">
+                        <MapPin className="w-4 h-4 mr-1 text-gray-400" />
+                        {beacon.location || "미설정"}
                       </div>
-                      <div className="text-sm text-gray-500">
-                        MAC: {beacon.macAddress}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center text-sm text-gray-900">
+                        <Wifi className="w-4 h-4 mr-1 text-gray-400" />
+                        {beacon.txPower} dBm
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center text-sm text-gray-900">
-                      <MapPin className="w-4 h-4 mr-1 text-gray-400" />
-                      {beacon.location || "미설정"}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center text-sm text-gray-900">
-                      <Wifi className="w-4 h-4 mr-1 text-gray-400" />
-                      {beacon.txPower} dBm
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                      beacon.status === "active" 
-                        ? "bg-green-100 text-green-800" 
-                        : "bg-red-100 text-red-800"
-                    }`}>
-                      <Activity className="w-3 h-3 mr-1" />
-                      {beacon.status === "active" ? "활성" : "비활성"}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex space-x-2">
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                        beacon.status === "active" 
+                          ? "bg-green-100 text-green-800" 
+                          : "bg-red-100 text-red-800"
+                      }`}>
+                        <Activity className="w-3 h-3 mr-1" />
+                        {beacon.status === "active" ? "활성" : "비활성"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => handleEdit(beacon)}
+                          className="text-blue-600 hover:text-blue-900"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(beacon.id)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                    <div className="flex flex-col items-center">
+                      <Wifi className="w-12 h-12 text-gray-300 mb-4" />
+                      <p className="text-lg font-medium text-gray-900 mb-2">등록된 Beacon이 없습니다</p>
+                      <p className="text-sm text-gray-500 mb-4">새로운 Beacon을 추가해보세요</p>
                       <button
-                        onClick={() => handleEdit(beacon)}
-                        className="text-blue-600 hover:text-blue-900"
+                        onClick={() => {
+                          resetForm();
+                          setIsModalOpen(true);
+                        }}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
                       >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(beacon.id)}
-                        className="text-red-600 hover:text-red-900"
-                      >
-                        <Trash2 className="w-4 h-4" />
+                        <Plus className="w-4 h-4" />
+                        Beacon 추가
                       </button>
                     </div>
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
