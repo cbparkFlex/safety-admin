@@ -74,6 +74,7 @@ export default function EmergencyManagement() {
     uploadedBy: '관리자'
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isSeeding, setIsSeeding] = useState(false);
 
   // SOP 폼 데이터
   const [sopForm, setSopForm] = useState({
@@ -221,6 +222,34 @@ export default function EmergencyManagement() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const handleSeedData = async () => {
+    if (!confirm('비상상황 기본 데이터를 생성하시겠습니까?\n기존 데이터는 삭제됩니다.')) {
+      return;
+    }
+
+    try {
+      setIsSeeding(true);
+      const response = await fetch('/api/emergency/seed', {
+        method: 'POST'
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        alert('비상상황 기본 데이터가 성공적으로 생성되었습니다.');
+        fetchSOPs();
+        fetchPDFs();
+      } else {
+        alert(result.error || '기본 데이터 생성에 실패했습니다.');
+      }
+    } catch (error) {
+      console.error('기본 데이터 생성 실패:', error);
+      alert('기본 데이터 생성 중 오류가 발생했습니다.');
+    } finally {
+      setIsSeeding(false);
+    }
+  };
+
   const handleCreateSOP = async () => {
     try {
       const response = await fetch('/api/emergency/sops', {
@@ -343,13 +372,34 @@ export default function EmergencyManagement() {
         <div>
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-semibold">비상 상황 SOP</h2>
-            <button
-              onClick={() => setShowSOPModal(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              SOP 추가
-            </button>
+            <div className="flex gap-2">
+              {sops.length === 0 && (
+                <button
+                  onClick={handleSeedData}
+                  disabled={isSeeding}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 disabled:bg-gray-400 flex items-center gap-2"
+                >
+                  {isSeeding ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      생성 중...
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle className="w-4 h-4" />
+                      기본 데이터 생성
+                    </>
+                  )}
+                </button>
+              )}
+              <button
+                onClick={() => setShowSOPModal(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                SOP 추가
+              </button>
+            </div>
           </div>
 
           <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -446,6 +496,39 @@ export default function EmergencyManagement() {
                 ))}
               </tbody>
             </table>
+            {sops.length === 0 && (
+              <div className="text-center py-12 text-gray-500">
+                <AlertTriangle className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">비상상황 SOP가 없습니다</h3>
+                <p className="text-gray-500 mb-4">기본 데이터를 생성하거나 새로운 SOP를 추가해주세요.</p>
+                <div className="flex justify-center gap-3">
+                  <button
+                    onClick={handleSeedData}
+                    disabled={isSeeding}
+                    className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 disabled:bg-gray-400 flex items-center gap-2"
+                  >
+                    {isSeeding ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        생성 중...
+                      </>
+                    ) : (
+                      <>
+                        <AlertTriangle className="w-4 h-4" />
+                        기본 데이터 생성
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setShowSOPModal(true)}
+                    className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    새 SOP 추가
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
