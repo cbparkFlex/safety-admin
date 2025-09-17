@@ -21,6 +21,8 @@ const MQTT_USERNAME = process.env.MQTT_USERNAME || '';
 const MQTT_PASSWORD = process.env.MQTT_PASSWORD || '';
 
 let mqttClient: mqtt.MqttClient | null = null;
+let isInitializing = false;
+let initializationPromise: Promise<boolean> | null = null;
 
 // mqttClient export
 export { mqttClient };
@@ -201,15 +203,33 @@ export interface ProximityAlertData {
 }
 
 /**
- * MQTT 클라이언트 초기화
+ * MQTT 클라이언트 초기화 (싱글톤 패턴)
  */
 export function initializeMQTTClient(): Promise<boolean> {
-  return new Promise((resolve, reject) => {
+  // 이미 초기화 중이면 기존 Promise 반환
+  if (isInitializing && initializationPromise) {
+    return initializationPromise;
+  }
+
+  // 이미 연결되어 있으면 성공 반환
+  if (mqttClient && mqttClient.connected) {
+    return Promise.resolve(true);
+  }
+
+  // 기존 클라이언트가 있으면 정리
+  if (mqttClient) {
+    console.log('기존 MQTT 클라이언트 정리 중...');
+    mqttClient.end();
+    mqttClient = null;
+  }
+
+  isInitializing = true;
+  initializationPromise = new Promise((resolve, reject) => {
     try {
       const options: mqtt.IClientOptions = {
         clientId: `safety-admin-${Date.now()}`,
         clean: true,
-        reconnectPeriod: 5000,
+        reconnectPeriod: 10000, // 재연결 주기를 10초로 증가
         connectTimeout: 30 * 1000,
       };
 
@@ -218,6 +238,7 @@ export function initializeMQTTClient(): Promise<boolean> {
         options.password = MQTT_PASSWORD;
       }
 
+      console.log('MQTT 클라이언트 초기화 시작...');
       mqttClient = mqtt.connect(MQTT_BROKER_URL, options);
 
       mqttClient.on('connect', () => {
@@ -228,11 +249,15 @@ export function initializeMQTTClient(): Promise<boolean> {
         // 스케줄러 초기화
         initializeScheduler();
         
+        isInitializing = false;
+        initializationPromise = null;
         resolve(true);
       });
 
       mqttClient.on('error', (error) => {
         console.error('MQTT 연결 오류:', error);
+        isInitializing = false;
+        initializationPromise = null;
         reject(error);
       });
 
@@ -258,13 +283,19 @@ mqttClient.on('message', (topic, message) => {
 
       mqttClient.on('close', () => {
         console.log('MQTT 연결이 종료되었습니다.');
+        isInitializing = false;
+        initializationPromise = null;
       });
 
     } catch (error) {
       console.error('MQTT 클라이언트 초기화 실패:', error);
+      isInitializing = false;
+      initializationPromise = null;
       reject(error);
     }
   });
+
+  return initializationPromise;
 }
 
 /**
@@ -642,9 +673,12 @@ async function handleProximityAlert(alertData: ProximityAlertData) {
  */
 export function disconnectMQTTClient() {
   if (mqttClient) {
+    console.log('MQTT 클라이언트 종료 중...');
     mqttClient.end();
     mqttClient = null;
   }
+  isInitializing = false;
+  initializationPromise = null;
 }
 
 /**

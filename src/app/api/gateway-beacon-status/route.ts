@@ -31,15 +31,11 @@ export async function GET(request: NextRequest) {
   try {
     console.log("📊 Gateway별 Beacon 상태 조회 시작");
     
-    // MQTT 클라이언트 초기화 확인 및 강제 초기화
-    if (latestRSSIData.size === 0) {
-      console.log("🔄 MQTT 클라이언트 재초기화 시도...");
-      try {
-        await initializeMQTTClient();
-        console.log("✅ MQTT 클라이언트 재초기화 완료");
-      } catch (error) {
-        console.error("❌ MQTT 클라이언트 재초기화 실패:", error);
-      }
+    // MQTT 클라이언트 초기화 확인 (싱글톤으로 관리되므로 안전)
+    try {
+      await initializeMQTTClient();
+    } catch (error) {
+      console.error("❌ MQTT 클라이언트 초기화 실패:", error);
     }
     
     // 모든 활성 Gateway 조회 (설정 정보 포함)
