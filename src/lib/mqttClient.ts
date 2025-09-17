@@ -419,13 +419,23 @@ async function handleGatewayMessage(topic: string, gatewayMessage: GatewayMessag
   }
   
   for (const beaconData of gatewayMessage.obj) {
-    // MAC 주소를 Beacon ID로 변환 (데이터베이스 형식에 맞춤)
-    const beaconId = beaconData.dmac.toUpperCase(); // BEACON_ 접두사 제거
-    const gatewayId = `GW_${gatewayMessage.gmac}`; // GW_ 접두사 유지
+    // MAC 주소로 Beacon을 찾아서 올바른 beaconId 사용
+    const macAddress = beaconData.dmac.toUpperCase();
+    const gatewayId = `GW_${gatewayMessage.gmac}`;
+    
+    // MAC 주소로 Beacon 조회
+    const beacon = await prisma.beacon.findFirst({
+      where: { macAddress: macAddress }
+    });
+    
+    if (!beacon) {
+      console.log(`⚠️ 등록되지 않은 Beacon MAC: ${macAddress}`);
+      continue;
+    }
     
     const messageData: BeaconMessage = {
-      beaconId,
-      gatewayId,
+      beaconId: beacon.beaconId, // 데이터베이스의 실제 beaconId 사용
+      gatewayId: gatewayId,
       rssi: beaconData.rssi,
       timestamp: new Date(beaconData.time).getTime(),
       uuid: beaconData.uuid,
