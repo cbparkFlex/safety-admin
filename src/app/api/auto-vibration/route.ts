@@ -1,6 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+// 자동 진동 알림 중복 방지
+const recentVibrations = new Map<string, number>();
+const VIBRATION_COOLDOWN = 10000; // 10초 쿨다운
+
+// 오래된 쿨다운 데이터 정리
+function cleanupOldVibrations() {
+  const now = Date.now();
+  for (const [key, timestamp] of recentVibrations.entries()) {
+    if (now - timestamp > VIBRATION_COOLDOWN * 2) {
+      recentVibrations.delete(key);
+    }
+  }
+}
+
 // 자동 진동 알림 처리
 export async function POST(request: NextRequest) {
   try {
@@ -52,6 +66,24 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // 오래된 쿨다운 데이터 정리
+    cleanupOldVibrations();
+
+    // 중복 진동 방지 (같은 비콘에 대해 10초 내 중복 진동 방지)
+    const vibrationKey = `${beaconId}_${gatewayId}`;
+    const now = Date.now();
+    const lastVibration = recentVibrations.get(vibrationKey);
+    
+    if (lastVibration && (now - lastVibration) < VIBRATION_COOLDOWN) {
+      console.log(`⏳ 중복 진동 방지: ${beaconId} (${now - lastVibration}ms 전에 진동됨)`);
+      return NextResponse.json({
+        success: true,
+        message: "중복 진동 방지: 최근에 이미 진동을 보냈습니다.",
+        vibrationSent: false,
+        cooldownRemaining: VIBRATION_COOLDOWN - (now - lastVibration)
+      });
+    }
+
     // 비콘 정보 조회
     const beacon = await prisma.beacon.findUnique({
       where: { beaconId },
@@ -88,6 +120,8 @@ export async function POST(request: NextRequest) {
       
       if (commandSent) {
         console.log(`MQTT 진동 명령 전송 성공: ${beacon.name} (${gateway.name})`);
+        // 진동 전송 성공 시 쿨다운 기록
+        recentVibrations.set(vibrationKey, now);
       } else {
         console.error(`MQTT 진동 명령 전송 실패: ${beacon.name} (${gateway.name})`);
       }

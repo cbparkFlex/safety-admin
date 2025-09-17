@@ -6,18 +6,31 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🚀 Beacon과 Gateway 초기 데이터 시드 API 시작...');
 
-    // Beacon 초기 데이터
-    const beaconData = {
-      beaconId: 'KBPro_444721',
-      name: 'KBPro_444721',
-      macAddress: 'BC5729055F5A',
-      uuid: '7777772E-6B6B-6D63-6E2E-636F6D0000001',
-      major: 6,
-      minor: 51531,
-      txPower: -59, // 기본 TX Power 값
-      location: 'A동',
-      status: 'active'
-    };
+    // Beacon 초기 데이터 (두 개의 비콘)
+    const beaconDataList = [
+      {
+        beaconId: 'BC5729055F5A', // 실제 MAC 주소를 beaconId로 사용
+        name: 'KBPro_444721',
+        macAddress: 'BC5729055F5A',
+        uuid: '7777772E-6B6B-6D63-6E2E-636F6D0000001',
+        major: 6,
+        minor: 51505,
+        txPower: -59, // 기본 TX Power 값
+        location: 'A동',
+        status: 'active'
+      },
+      {
+        beaconId: 'BC5729055F74', // 두 번째 비콘
+        name: 'KBPro_444747',
+        macAddress: 'BC5729055F74',
+        uuid: '7777772E-6B6B-6D63-6E2E-636F6D0000001',
+        major: 6,
+        minor: 51531,
+        txPower: -59,
+        location: 'B동',
+        status: 'active'
+      }
+    ];
 
     // Gateway 초기 데이터
     const gatewayData = {
@@ -31,19 +44,23 @@ export async function POST(request: NextRequest) {
       autoVibration: false
     };
 
-    // 기존 데이터 확인 및 생성
-    let beacon = await prisma.beacon.findUnique({
-      where: { beaconId: beaconData.beaconId }
-    });
-
-    if (!beacon) {
-      console.log('📡 Beacon 데이터 생성 중...');
-      beacon = await prisma.beacon.create({
-        data: beaconData
+    // 기존 데이터 확인 및 생성 (여러 비콘)
+    const createdBeacons = [];
+    for (const beaconData of beaconDataList) {
+      let beacon = await prisma.beacon.findUnique({
+        where: { beaconId: beaconData.beaconId }
       });
-      console.log(`✅ Beacon 생성 완료: ${beacon.name} (${beacon.beaconId})`);
-    } else {
-      console.log(`ℹ️ Beacon 이미 존재: ${beacon.name} (${beacon.beaconId})`);
+
+      if (!beacon) {
+        console.log('📡 Beacon 데이터 생성 중...');
+        beacon = await prisma.beacon.create({
+          data: beaconData
+        });
+        console.log(`✅ Beacon 생성 완료: ${beacon.name} (${beacon.beaconId})`);
+      } else {
+        console.log(`ℹ️ Beacon 이미 존재: ${beacon.name} (${beacon.beaconId})`);
+      }
+      createdBeacons.push(beacon);
     }
 
     let gateway = await prisma.gateway.findUnique({
@@ -60,16 +77,18 @@ export async function POST(request: NextRequest) {
       console.log(`ℹ️ Gateway 이미 존재: ${gateway.name} (${gateway.gatewayId})`);
     }
 
-    // Beacon과 Gateway 연결 (Beacon의 gatewayId 업데이트)
-    if (beacon.gatewayId !== gateway.gatewayId) {
-      console.log('🔗 Beacon과 Gateway 연결 중...');
-      beacon = await prisma.beacon.update({
-        where: { beaconId: beacon.beaconId },
-        data: { gatewayId: gateway.gatewayId }
-      });
-      console.log(`✅ Beacon과 Gateway 연결 완료: ${beacon.name} ↔ ${gateway.name}`);
-    } else {
-      console.log(`ℹ️ Beacon과 Gateway 이미 연결됨: ${beacon.name} ↔ ${gateway.name}`);
+    // Beacon과 Gateway 연결 (모든 Beacon의 gatewayId 업데이트)
+    for (const beacon of createdBeacons) {
+      if (beacon.gatewayId !== gateway.gatewayId) {
+        console.log('🔗 Beacon과 Gateway 연결 중...');
+        await prisma.beacon.update({
+          where: { beaconId: beacon.beaconId },
+          data: { gatewayId: gateway.gatewayId }
+        });
+        console.log(`✅ Beacon과 Gateway 연결 완료: ${beacon.name} ↔ ${gateway.name}`);
+      } else {
+        console.log(`ℹ️ Beacon과 Gateway 이미 연결됨: ${beacon.name} ↔ ${gateway.name}`);
+      }
     }
 
     console.log('🎉 Beacon과 Gateway 초기 데이터 시드 완료!');
@@ -78,7 +97,7 @@ export async function POST(request: NextRequest) {
       success: true,
       message: "Beacon과 Gateway 초기 데이터가 성공적으로 설정되었습니다.",
       data: {
-        beacon: {
+        beacons: createdBeacons.map(beacon => ({
           id: beacon.id,
           beaconId: beacon.beaconId,
           name: beacon.name,
@@ -89,7 +108,7 @@ export async function POST(request: NextRequest) {
           txPower: beacon.txPower,
           location: beacon.location,
           gatewayId: beacon.gatewayId
-        },
+        })),
         gateway: {
           id: gateway.id,
           gatewayId: gateway.gatewayId,

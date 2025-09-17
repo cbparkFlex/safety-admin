@@ -79,6 +79,7 @@ model Beacon {
   gateway     Gateway? @relation(fields: [gatewayId], references: [gatewayId])
   proximityAlerts ProximityAlert[]
   rssiCalibrations RssiCalibration[]
+  realtimeRSSI RealtimeRSSI[]
 
   @@map("beacons")
 }
@@ -100,6 +101,7 @@ model Gateway {
   beacons Beacon[]
   proximityAlerts ProximityAlert[]
   rssiCalibrations RssiCalibration[]
+  realtimeRSSI RealtimeRSSI[]
 
   @@map("gateways")
 }
@@ -336,4 +338,21 @@ model CctvDetection {
   @@index([status, timestamp])
   @@index([timestamp])
   @@map("cctv_detections")
+}
+
+model RealtimeRSSI {
+  id        Int      @id @default(autoincrement())
+  beaconId  String   @map("beacon_id")
+  gatewayId String   @map("gateway_id")
+  rssi      Int
+  distance  Float?
+  timestamp DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  beacon    Beacon   @relation(fields: [beaconId], references: [beaconId])
+  gateway   Gateway  @relation(fields: [gatewayId], references: [gatewayId])
+
+  @@unique([beaconId, gatewayId]) // 한 비콘-게이트웨이 조합당 하나의 레코드만 유지
+  @@map("realtime_rssi")
 }

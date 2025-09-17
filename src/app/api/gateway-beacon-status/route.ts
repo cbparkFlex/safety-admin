@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getLatestRSSI, latestRSSIData } from "@/lib/mqttClient";
+import { getLatestRSSI, latestRSSIData, initializeMQTTClient } from "@/lib/mqttClient";
 import { rssiCalibration } from "@/lib/rssiCalibration";
 
 interface BeaconStatus {
@@ -30,6 +30,17 @@ interface GatewayBeaconStatus {
 export async function GET(request: NextRequest) {
   try {
     console.log("📊 Gateway별 Beacon 상태 조회 시작");
+    
+    // MQTT 클라이언트 초기화 확인 및 강제 초기화
+    if (latestRSSIData.size === 0) {
+      console.log("🔄 MQTT 클라이언트 재초기화 시도...");
+      try {
+        await initializeMQTTClient();
+        console.log("✅ MQTT 클라이언트 재초기화 완료");
+      } catch (error) {
+        console.error("❌ MQTT 클라이언트 재초기화 실패:", error);
+      }
+    }
     
     // 모든 활성 Gateway 조회 (설정 정보 포함)
     const gateways = await prisma.gateway.findMany({
@@ -62,7 +73,7 @@ export async function GET(request: NextRequest) {
         // 최신 RSSI 데이터 조회
         // RSSI 조회 (로그 간소화)
         
-        const latestRSSI = getLatestRSSI(beacon.beaconId, gateway.gatewayId);
+        const latestRSSI = await getLatestRSSI(beacon.beaconId, gateway.gatewayId);
         
         let currentDistance: number | null = null;
         let calibrationInfo: any = undefined;
