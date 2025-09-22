@@ -3,15 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
+    "dev": "next start",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:seed": "node scripts/seed.js",
     "db:seed:beacon-gateway": "node scripts/seed-beacon-gateway.js",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "production": "npm run build && npm run start"
   },
   "dependencies": {
     "@prisma/client": "^6.15.0",
