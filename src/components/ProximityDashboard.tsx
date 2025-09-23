@@ -366,34 +366,6 @@ export default function ProximityDashboard() {
         <h1 className="text-2xl font-bold text-gray-900">근접 알림 대시보드</h1>
         <div className="flex items-center gap-4">
           
-          {/* 필터 버튼들 */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setFilter('all')}
-              className={`px-3 py-1 rounded-md text-sm ${
-                filter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
-              }`}
-            >
-              전체
-            </button>
-            <button
-              onClick={() => setFilter('active')}
-              className={`px-3 py-1 rounded-md text-sm ${
-                filter === 'active' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
-              }`}
-            >
-              활성 알림
-            </button>
-            <button
-              onClick={() => setFilter('danger')}
-              className={`px-3 py-1 rounded-md text-sm ${
-                filter === 'danger' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
-              }`}
-            >
-              위험
-            </button>
-          </div>
-          
           {/* 보정 데이터 재로드 버튼 */}
           <button
             onClick={reloadCalibrationData}
