@@ -153,20 +153,33 @@ export async function POST(request: NextRequest) {
         }
 
         // 실제 RSSI 데이터 가져오기
-        console.log(`측정 데이터 요청: ${addSession.beaconId}, ${addSession.gatewayId}`);
+        console.log(`📊 측정 데이터 요청: ${addSession.beaconId}, ${addSession.gatewayId}`);
+        
+        // Beacon 정보 조회하여 MAC 주소 확인
+        const beacon = await prisma.beacon.findUnique({
+          where: { beaconId: addSession.beaconId },
+          select: { macAddress: true, name: true }
+        });
+        
+        if (beacon) {
+          console.log(`🔍 Beacon 정보: ${beacon.name} (${beacon.macAddress})`);
+        } else {
+          console.log(`❌ Beacon 정보 없음: ${addSession.beaconId}`);
+        }
+        
         let currentRSSI = getLatestRSSI(addSession.beaconId, addSession.gatewayId);
         
-        // 임시 해결책: RSSI 데이터가 없으면 시뮬레이션 값 사용
+        // RSSI 데이터가 없으면 시뮬레이션 값 사용
         if (currentRSSI === null) {
-          console.log(`RSSI 데이터 없음: ${addSession.beaconId}_${addSession.gatewayId}, 시뮬레이션 값 사용`);
+          console.log(`⚠️ RSSI 데이터 없음: ${addSession.beaconId}_${addSession.gatewayId}, 시뮬레이션 값 사용`);
           // 거리에 따른 시뮬레이션 RSSI 값 생성
           const baseRSSI = -45; // 1m 기준
           const distanceFactor = Math.log10(addSession.distance) * 20; // 거리에 따른 감쇠
           const noise = (Math.random() - 0.5) * 4; // ±2dBm 노이즈
           currentRSSI = Math.round(baseRSSI - distanceFactor + noise);
-          console.log(`시뮬레이션 RSSI: ${currentRSSI}dBm (거리: ${addSession.distance}m)`);
+          console.log(`🎲 시뮬레이션 RSSI: ${currentRSSI}dBm (거리: ${addSession.distance}m)`);
         } else {
-          console.log(`RSSI 데이터 획득: ${currentRSSI}dBm`);
+          console.log(`✅ RSSI 데이터 획득: ${currentRSSI}dBm`);
         }
 
         addSession.measurements.push(currentRSSI);

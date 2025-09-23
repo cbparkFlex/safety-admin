@@ -708,7 +708,15 @@ function RealTimeMeasurementForm({
       const response = await fetch("/api/beacons");
       if (response.ok) {
         const data = await response.json();
-        setBeacons(data.beacons || []);
+        console.log("Beacon API 응답:", data);
+        
+        // DB에 등록된 모든 beacon을 RSSI 측정에 사용
+        const allBeacons = data.data || [];
+        console.log("전체 Beacon 목록:", allBeacons);
+        setBeacons(allBeacons);
+      } else {
+        console.error("Beacon 목록 조회 실패:", response.status);
+        setBeacons([]);
       }
     } catch (error) {
       console.error("Beacon 목록 조회 실패:", error);
@@ -743,7 +751,9 @@ function RealTimeMeasurementForm({
                 className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                 required
               >
-                <option value="">Beacon 선택</option>
+                <option value="">
+                  {beacons.length === 0 ? "등록된 Beacon이 없습니다" : "Beacon 선택"}
+                </option>
                 {Array.isArray(beacons) && beacons.map((beacon) => (
                   <option key={beacon.id} value={beacon.beaconId}>
                     {beacon.name} ({beacon.beaconId})

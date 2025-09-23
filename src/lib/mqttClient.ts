@@ -429,7 +429,6 @@ async function handleGatewayMessage(topic: string, gatewayMessage: GatewayMessag
     });
     
     if (!beacon) {
-      console.log(`⚠️ 등록되지 않은 Beacon MAC: ${macAddress}`);
       continue;
     }
     
@@ -543,9 +542,9 @@ async function processBeaconMessage(messageData: BeaconMessage) {
     
     // 보정 정보 로그
     if (calibrationInfo?.isCalibrated) {
-      console.log(`RSSI 보정 적용: 원본=${messageData.rssi}dBm → 스무딩=${smoothedRSSI}dBm, 거리=${smoothedDistance.toFixed(2)}m (${calibrationInfo.method}, ${calibrationInfo.confidence})`);
+      console.log(`${beacon.macAddress} Beacon RSSI 보정 적용: 원본=${messageData.rssi}dBm → 스무딩=${smoothedRSSI}dBm, 거리=${smoothedDistance.toFixed(2)}m (${calibrationInfo.method}, ${calibrationInfo.confidence})`);
     } else {
-      console.log(`RSSI 스무딩: 원본=${messageData.rssi}dBm → 스무딩=${smoothedRSSI}dBm, 거리=${smoothedDistance.toFixed(2)}m (기본 모델)`);
+      console.log(`${beacon.macAddress} Beacon RSSI 스무딩: 원본=${messageData.rssi}dBm → 스무딩=${smoothedRSSI}dBm, 거리=${smoothedDistance.toFixed(2)}m (기본 모델)`);
     }
 
     // 히스토리 상태 로그 제거됨 (스무딩 제거로 불필요)
@@ -753,11 +752,11 @@ export async function cleanupUnregisteredBeaconData() {
 }
 
 /**
- * 실시간 측정을 위한 최신 RSSI 데이터 조회 (데이터베이스 기반)
+ * 실시간 측정을 위한 최신 RSSI 데이터 조회 (메모리 기반)
  */
-export async function getLatestRSSI(beaconId: string, gatewayId: string): Promise<number | null> {
+export function getLatestRSSI(beaconId: string, gatewayId: string): number | null {
   try {
-    // 먼저 메모리에서 확인
+    // 메모리에서 확인
     const dataKey = `${beaconId}_${gatewayId}`;
     const memoryData = latestRSSIData.get(dataKey);
     
@@ -765,34 +764,18 @@ export async function getLatestRSSI(beaconId: string, gatewayId: string): Promis
       const now = Date.now();
       const timeDiff = now - memoryData.timestamp;
       
-      if (timeDiff <= 5000) {
+      // 10초 이내의 데이터만 유효 (측정 중에는 더 긴 시간 허용)
+      if (timeDiff <= 10000) {
+        console.log(`📊 RSSI 데이터 조회 성공: ${beaconId}_${gatewayId} = ${memoryData.rssi}dBm (${timeDiff}ms 전)`);
         return memoryData.rssi;
+      } else {
+        console.log(`⏰ RSSI 데이터 만료: ${beaconId}_${gatewayId} (${timeDiff}ms 전)`);
       }
+    } else {
+      console.log(`❌ RSSI 데이터 없음: ${beaconId}_${gatewayId}`);
     }
     
-    // 메모리에 없거나 만료된 경우 데이터베이스에서 조회
-    const dbData = await prisma.realtimeRSSI.findUnique({
-      where: {
-        beaconId_gatewayId: {
-          beaconId: beaconId,
-          gatewayId: gatewayId
-        }
-      }
-    });
-    
-    if (!dbData) {
-      return null;
-    }
-    
-    // 5초 이내의 데이터만 유효
-    const now = Date.now();
-    const timeDiff = now - dbData.timestamp.getTime();
-    
-    if (timeDiff > 5000) {
-      return null;
-    }
-    
-    return dbData.rssi;
+    return null;
     
   } catch (error) {
     console.error(`❌ RSSI 조회 실패: ${beaconId}_${gatewayId}`, error);

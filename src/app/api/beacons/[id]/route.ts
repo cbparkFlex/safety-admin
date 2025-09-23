@@ -55,23 +55,45 @@ export async function DELETE(
   try {
     const id = parseInt(params.id);
 
-    // 관련된 ProximityAlert가 있는지 확인
-    const relatedAlerts = await prisma.proximityAlert.findFirst({
-      where: { beaconId: { in: await prisma.beacon.findUnique({ where: { id } }).then(b => b ? [b.beaconId] : []) } },
-    });
-
-    if (relatedAlerts) {
-      return NextResponse.json(
-        { error: "관련된 근접 알림이 있어 삭제할 수 없습니다." },
-        { status: 400 }
-      );
-    }
-
-    await prisma.beacon.delete({
+    // 비콘 정보 조회
+    const beacon = await prisma.beacon.findUnique({
       where: { id },
     });
 
-    return NextResponse.json({ message: "비콘이 삭제되었습니다." });
+    if (!beacon) {
+      return NextResponse.json(
+        { error: "비콘을 찾을 수 없습니다." },
+        { status: 404 }
+      );
+    }
+
+    // 트랜잭션으로 관련 데이터들을 함께 삭제
+    await prisma.$transaction(async (tx) => {
+      // 1. 관련된 ProximityAlert 삭제
+      await tx.proximityAlert.deleteMany({
+        where: { beaconId: beacon.beaconId },
+      });
+
+      // 2. 관련된 RssiCalibration 삭제
+      await tx.rssiCalibration.deleteMany({
+        where: { beaconId: beacon.beaconId },
+      });
+
+      // 3. 관련된 RealtimeRSSI 삭제
+      await tx.realtimeRSSI.deleteMany({
+        where: { beaconId: beacon.beaconId },
+      });
+
+      // 4. 비콘 삭제
+      await tx.beacon.delete({
+        where: { id },
+      });
+    });
+
+    return NextResponse.json({ 
+      message: "비콘과 관련된 모든 데이터가 삭제되었습니다.",
+      deletedBeaconId: beacon.beaconId 
+    });
   } catch (error) {
     console.error("비콘 삭제 실패:", error);
     return NextResponse.json(
