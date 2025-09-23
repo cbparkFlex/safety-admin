@@ -39,6 +39,17 @@ export async function sendBeaconCommand(beaconId: string, command: any, gatewayI
   const now = Date.now();
   const pendingCommand = pendingCommands.get(commandKey);
   
+  // 오래된 pending commands 정리 (메모리 누수 방지)
+  if (pendingCommands.size > 100) {
+    const cutoff = now - COMMAND_DEDUP_WINDOW * 10;
+    for (const [key, cmd] of pendingCommands.entries()) {
+      if (cmd.timestamp < cutoff) {
+        pendingCommands.delete(key);
+      }
+    }
+    console.log(`🧹 메모리 정리: pendingCommands ${pendingCommands.size}개 남음`);
+  }
+  
   if (pendingCommand && (now - pendingCommand.timestamp) < COMMAND_DEDUP_WINDOW) {
     console.log(`⏳ 중복 명령 방지: ${beaconId} (${now - pendingCommand.timestamp}ms 전에 전송됨)`);
     return pendingCommand.promise;
@@ -460,14 +471,15 @@ async function processBeaconMessage(messageData: BeaconMessage) {
     // 메시지 처리 시간 기록
     processedMessages.set(messageKey, now);
     
-    // 오래된 메시지 키 정리 (메모리 누수 방지)
-    if (processedMessages.size > 1000) {
-      const cutoff = now - MESSAGE_DEDUP_WINDOW * 10;
+    // 오래된 메시지 키 정리 (메모리 누수 방지) - 더 자주 정리
+    if (processedMessages.size > 500) {
+      const cutoff = now - MESSAGE_DEDUP_WINDOW * 5; // 5초로 단축
       for (const [key, timestamp] of processedMessages.entries()) {
         if (timestamp < cutoff) {
           processedMessages.delete(key);
         }
       }
+      console.log(`🧹 메모리 정리: processedMessages ${processedMessages.size}개 남음`);
     }
 
     // Beacon 정보 조회 (먼저 등록된 Beacon인지 확인)
@@ -496,6 +508,19 @@ async function processBeaconMessage(messageData: BeaconMessage) {
       rssi: messageData.rssi,
       timestamp: Date.now()
     });
+    
+    // RSSI 데이터 정리 (메모리 누수 방지)
+    if (latestRSSIData.size > 200) {
+      const cutoff = Date.now() - 30000; // 30초 이전 데이터 삭제
+      for (const [key, data] of latestRSSIData.entries()) {
+        if (data.timestamp < cutoff) {
+          latestRSSIData.delete(key);
+        }
+      }
+      console.log(`🧹 메모리 정리: latestRSSIData ${latestRSSIData.size}개 남음`);
+    }
+    
+    console.log(`💾 실시간 RSSI 저장: ${dataKey} = ${messageData.rssi}dBm`);
     
     // 데이터베이스에도 실시간 RSSI 데이터 저장 (UPSERT)
     try {
@@ -678,6 +703,54 @@ async function handleProximityAlert(alertData: ProximityAlertData) {
 }
 
 /**
+ * 메모리 정리 함수 (주기적 호출용)
+ */
+export function cleanupMemory() {
+  const now = Date.now();
+  let cleanedCount = 0;
+  
+  // processedMessages 정리
+  if (processedMessages.size > 0) {
+    const cutoff = now - MESSAGE_DEDUP_WINDOW * 10;
+    for (const [key, timestamp] of processedMessages.entries()) {
+      if (timestamp < cutoff) {
+        processedMessages.delete(key);
+        cleanedCount++;
+      }
+    }
+  }
+  
+  // pendingCommands 정리
+  if (pendingCommands.size > 0) {
+    const cutoff = now - COMMAND_DEDUP_WINDOW * 10;
+    for (const [key, cmd] of pendingCommands.entries()) {
+      if (cmd.timestamp < cutoff) {
+        pendingCommands.delete(key);
+        cleanedCount++;
+      }
+    }
+  }
+  
+  // latestRSSIData 정리
+  if (latestRSSIData.size > 0) {
+    const cutoff = now - 60000; // 1분 이전 데이터 삭제
+    for (const [key, data] of latestRSSIData.entries()) {
+      if (data.timestamp < cutoff) {
+        latestRSSIData.delete(key);
+        cleanedCount++;
+      }
+    }
+  }
+  
+  if (cleanedCount > 0) {
+    console.log(`🧹 주기적 메모리 정리 완료: ${cleanedCount}개 항목 삭제`);
+    console.log(`📊 현재 상태: processedMessages=${processedMessages.size}, pendingCommands=${pendingCommands.size}, latestRSSIData=${latestRSSIData.size}`);
+  }
+  
+  return cleanedCount;
+}
+
+/**
  * MQTT 클라이언트 종료
  */
 export function disconnectMQTTClient() {
@@ -688,6 +761,9 @@ export function disconnectMQTTClient() {
   }
   isInitializing = false;
   initializationPromise = null;
+  
+  // 메모리 정리
+  cleanupMemory();
 }
 
 /**
