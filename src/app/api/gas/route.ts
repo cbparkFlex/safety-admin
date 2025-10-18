@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { timestamp, sensor, value, level } = body;
+    const { timestamp, sensor, value, level, ip } = body;
 
     // 필수 필드 검증
     if (!timestamp || !sensor || value === undefined || !level) {
@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
         value: parseFloat(value),
         level: level,
         timestamp: timestampDate,
+        ip: ip || null,
         timeDiff: timeDiff
       }
     });
@@ -128,6 +129,7 @@ export async function POST(request: NextRequest) {
         sensor: sensor,
         value: value,
         level: level,
+        ip: ip,
         timestamp: timestamp
       }
     });
@@ -191,11 +193,23 @@ export async function GET(request: NextRequest) {
     const sensorSummary = latestData.reduce((acc: any, item) => {
       const key = item.sensorId; // sensorId를 직접 키로 사용
       
+      // level 값 정규화
+      let normalizedLevel = item._max.level;
+      if (normalizedLevel === 'WARN') {
+        normalizedLevel = 'GAS_WARNING';
+      } else if (normalizedLevel === 'DANGER') {
+        normalizedLevel = 'GAS_DANGER';
+      } else if (normalizedLevel === 'CRITICAL') {
+        normalizedLevel = 'GAS_CRITICAL';
+      } else if (normalizedLevel === 'SAFE') {
+        normalizedLevel = 'GAS_SAFE';
+      }
+      
       acc[key] = {
         building: item.building,
         sensorId: item.sensorId,
         value: item._max.value,
-        level: item._max.level, // 원본 level 값 그대로 사용
+        level: normalizedLevel,
         lastUpdate: item._max.timestamp
       };
       return acc;

@@ -302,6 +302,7 @@ model GasSensorData {
   value     Float    // 센서 값 (PPM)
   level     String   // 위험도 레벨 (GAS_SAFE, GAS_WARNING, GAS_DANGER, GAS_CRITICAL)
   timestamp DateTime // 측정 시간
+  ip        String?  // 센서 IP 주소
   createdAt DateTime @default(now()) @map("created_at")
   timeDiff  Int?     @map("time_diff") // timestamp와 createdAt의 차이값 (밀리초)
 
