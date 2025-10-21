@@ -36,8 +36,8 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    // DANGER 또는 CRITICAL 레벨 감지 시 비상상황 자동 생성
-    if (level === 'DANGER' || level === 'CRITICAL') {
+    // WARN 또는 DANGER 레벨 감지 시 비상상황 자동 생성
+    if (level === 'WARN' || level === 'DANGER') {
       try {
         // LPG 가스 누출 SOP 조회
         const lpgSOP = await prisma.emergencySOP.findFirst({
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
                 title: `LPG 가스 누출 감지 - ${sensor}`,
                 description: `${sensor} 센서에서 ${level} 레벨의 가스 누출이 감지되었습니다. (PPM: ${value})`,
                 location: `${building}동 ${sensor.split('_')[1]}번 센서`,
-                severity: level === 'CRITICAL' ? 'critical' : 'high',
+                severity: level === 'DANGER' ? 'high' : 'medium',
                 status: 'active'
               }
             });
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
                 title: `LPG 가스 누출 감지 - ${sensor}`,
                 message: `${sensor} 센서에서 ${level} 레벨의 가스 누출이 감지되었습니다. (PPM: ${value})`,
                 location: `${building}동 ${sensor.split('_')[1]}번 센서`,
-                severity: level === 'CRITICAL' ? 'critical' : 'danger',
+                severity: level === 'DANGER' ? 'danger' : 'warning',
                 status: 'active',
                 source: 'sensor',
                 metadata: JSON.stringify({

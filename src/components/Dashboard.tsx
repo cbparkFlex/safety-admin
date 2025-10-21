@@ -4,6 +4,28 @@ import { useState, useEffect, useRef } from 'react';
 import { Users, Bell, TrendingUp, TrendingDown, Clock, Wrench, Mountain, AlertTriangle, History, Eye, Vibrate } from 'lucide-react';
 import EmergencyPopup from './EmergencyPopup';
 import { useRouter } from 'next/navigation';
+import { Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+
+// Chart.js 등록
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+);
 
 interface DetectionEvent {
   time: string;
@@ -171,6 +193,12 @@ export default function Dashboard() {
     cctv002: null,
     cctv003: null
   });
+
+  // 센서 차트 팝업 상태 추가
+  const [showSensorChart, setShowSensorChart] = useState(false);
+  const [selectedSensor, setSelectedSensor] = useState<any>(null);
+  const [sensorChartData, setSensorChartData] = useState<any[]>([]);
+  const [chartLoading, setChartLoading] = useState(false);
 
   // 알림 메시지 추가 함수
   const addAlertMessage = (alert: Omit<AlertMessage, 'id' | 'timestamp'>) => {
@@ -849,6 +877,72 @@ export default function Dashboard() {
     }
   };
 
+  // 센서 클릭 핸들러 추가
+  const handleSensorClick = async (sensor: any) => {
+    setSelectedSensor(sensor);
+    setShowSensorChart(true);
+    setChartLoading(true);
+    
+    try {
+      // 해당 센서의 오늘 데이터 가져오기
+      const today = new Date();
+      const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+      
+      const response = await fetch(
+        `/api/gas?building=${sensor.building}&hours=24&limit=1000`
+      );
+      const result = await response.json();
+      
+      if (result.success) {
+        // 해당 센서의 데이터만 필터링
+        const sensorData = result.data.recent.filter((data: any) => 
+          data.sensorId === `${sensor.building}_${sensor.name}`
+        );
+        
+        // 시간순으로 정렬
+        sensorData.sort((a: any, b: any) => 
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+        
+        setSensorChartData(sensorData);
+      }
+    } catch (error) {
+      console.error('센서 데이터 조회 실패:', error);
+    } finally {
+      setChartLoading(false);
+    }
+  };
+
+  // 차트 데이터 준비
+  const prepareChartData = () => {
+    if (!sensorChartData.length) return null;
+
+    const labels = sensorChartData.map((data: any) => 
+      new Date(data.timestamp).toLocaleTimeString('ko-KR', {
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    );
+
+    const values = sensorChartData.map((data: any) => data.value);
+
+    return {
+      labels,
+      datasets: [
+        {
+          label: '가스 농도 (PPM)',
+          data: values,
+          borderColor: 'rgb(75, 192, 192)',
+          backgroundColor: 'rgba(75, 192, 192, 0.2)',
+          tension: 0.1,
+        },
+      ],
+    };
+  };
+
+  const chartData = prepareChartData();
+
   return (
     <div className="space-y-6">
       {/* 테스트 버튼 (개발용) */}
@@ -1261,11 +1355,13 @@ export default function Dashboard() {
                     return (
                       <div
                         key={sensor.id}
-                        className="absolute"
+                        className="absolute cursor-pointer hover:scale-105 transition-transform"
                         style={{
                           top: sensor.position.top,
                           ...(sensor.position.left ? { left: sensor.position.left } : { right: sensor.position.right })
                         }}
+                        onClick={() => handleSensorClick(sensor)}
+                        title={`${sensor.building}동 ${sensor.name}번 센서 - 클릭하여 상세 데이터 보기`}
                       >
                         <div className={`border rounded p-2 text-center w-16 h-16 flex flex-col justify-center ${getStatusColor(currentStatus)}`}>
                           <div className="text-xs font-medium">{sensor.name}</div>
@@ -1278,6 +1374,10 @@ export default function Dashboard() {
                 </div>
 
                 {/* A동 센서들 - 11개 배치 */}
+                {/* A동 라인 */}
+                <div className="absolute top-[1%] right-[22%] w-[17%] h-[98%] border-2 border-gray-500 rounded-lg rotate-53">
+                </div>
+
                 <div>
                 {gasSensors.filter(sensor => sensor.building === 'A').map((sensor) => {
                     // 실시간 데이터가 있으면 사용, 없으면 기본값
@@ -1316,11 +1416,13 @@ export default function Dashboard() {
                     return (
                       <div
                         key={sensor.id}
-                        className="absolute"
+                        className="absolute cursor-pointer hover:scale-105 transition-transform"
                         style={{
                           top: sensor.position.top,
                           ...(sensor.position.left ? { left: sensor.position.left } : { right: sensor.position.right })
                         }}
+                        onClick={() => handleSensorClick(sensor)}
+                        title={`${sensor.building}동 ${sensor.name}번 센서 - 클릭하여 상세 데이터 보기`}
                       >
                         <div className={`border rounded p-2 text-center w-16 h-16 flex flex-col justify-center ${getStatusColor(currentStatus)}`}>
                           <div className="text-xs font-medium">{sensor.name}</div>
@@ -1331,9 +1433,7 @@ export default function Dashboard() {
                     );
                   })}
                 </div>
-                {/* A동 라인 */}
-                <div className="absolute top-[1%] right-[22%] w-[17%] h-[98%] border-2 border-gray-500 rounded-lg rotate-53">
-                </div>
+
 
                 {/* 사무동 */}
                 <div className="absolute bottom-[1%] left-[39.1%]">
@@ -1704,6 +1804,133 @@ export default function Dashboard() {
           onClose={() => setShowEmergencyPopup(false)}
           onComplete={handleEmergencyComplete}
         />
+      )}
+
+      {showSensorChart && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-11/12 max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">
+                {selectedSensor?.building}동 {selectedSensor?.name}번 센서 - 오늘 데이터
+              </h2>
+              <button
+                onClick={() => setShowSensorChart(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            
+            {chartLoading ? (
+              <div className="flex items-center justify-center h-64">
+                <div className="text-gray-500">데이터를 불러오는 중...</div>
+              </div>
+            ) : chartData ? (
+              <div className="space-y-4">
+                {/* 현재 상태 정보 */}
+                <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <div className="text-sm text-gray-600">현재 상태</div>
+                    <div className={`font-semibold ${
+                      selectedSensor?.realtime?.level === 'DANGER' ? 'text-red-600' :
+                      selectedSensor?.realtime?.level === 'WARN' ? 'text-yellow-600' :
+                      'text-green-600'
+                    }`}>
+                      {getStatusText(selectedSensor?.realtime?.level || 'SAFE')}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-gray-600">현재 값</div>
+                    <div className="font-semibold">{selectedSensor?.realtime?.value || 0} PPM</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-gray-600">마지막 업데이트</div>
+                    <div className="font-semibold text-sm">
+                      {selectedSensor?.realtime?.lastUpdate ? 
+                        new Date(selectedSensor.realtime.lastUpdate).toLocaleString('ko-KR') : 
+                        '데이터 없음'
+                      }
+                    </div>
+                  </div>
+                </div>
+                
+                {/* 차트 */}
+                <div className="h-96">
+                  <Line 
+                    data={chartData} 
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: {
+                        title: {
+                          display: true,
+                          text: '시간별 가스 농도 변화',
+                        },
+                        legend: {
+                          display: true,
+                        },
+                      },
+                      scales: {
+                        y: {
+                          beginAtZero: true,
+                          title: {
+                            display: true,
+                            text: '가스 농도 (PPM)',
+                          },
+                        },
+                        x: {
+                          title: {
+                            display: true,
+                            text: '시간',
+                          },
+                        },
+                      },
+                    }}
+                  />
+                </div>
+                
+                {/* 데이터 테이블 */}
+                <div className="max-h-64 overflow-y-auto">
+                  <h3 className="text-lg font-medium mb-2">상세 데이터</h3>
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left">시간</th>
+                        <th className="px-4 py-2 text-left">값 (PPM)</th>
+                        <th className="px-4 py-2 text-left">상태</th>
+                        <th className="px-4 py-2 text-left">IP</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sensorChartData.slice(-20).reverse().map((data: any, index: number) => (
+                        <tr key={index} className="border-b">
+                          <td className="px-4 py-2">
+                            {new Date(data.timestamp).toLocaleString('ko-KR')}
+                          </td>
+                          <td className="px-4 py-2 font-medium">{data.value}</td>
+                          <td className="px-4 py-2">
+                            <span className={`px-2 py-1 rounded text-xs ${
+                              data.level === 'DANGER' ? 'bg-red-100 text-red-800' :
+                              data.level === 'WARN' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-green-100 text-green-800'
+                            }`}>
+                              {getStatusText(data.level)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-gray-500">{data.ip || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-64">
+                <div className="text-gray-500">데이터가 없습니다.</div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
