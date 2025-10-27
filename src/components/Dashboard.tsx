@@ -119,6 +119,12 @@ export default function Dashboard() {
   // 비상상황 기록 상태
   const [emergencyRecords, setEmergencyRecords] = useState<EmergencyRecord[]>([]);
   
+  // 센서 차트 팝업 상태
+  const [showSensorChart, setShowSensorChart] = useState(false);
+  const [selectedSensor, setSelectedSensor] = useState<any>(null);
+  const [sensorChartData, setSensorChartData] = useState<any[]>([]);
+  const [chartLoading, setChartLoading] = useState(false);
+  
   // CCTV 스트림 상태 (고정 URL 사용)
   const [cctvStreams, setCctvStreams] = useState<CctvStream[]>([]);
   
@@ -194,12 +200,6 @@ export default function Dashboard() {
     cctv003: null
   });
 
-  // 센서 차트 팝업 상태 추가
-  const [showSensorChart, setShowSensorChart] = useState(false);
-  const [selectedSensor, setSelectedSensor] = useState<any>(null);
-  const [sensorChartData, setSensorChartData] = useState<any[]>([]);
-  const [chartLoading, setChartLoading] = useState(false);
-
   // 알림 메시지 추가 함수
   const addAlertMessage = (alert: Omit<AlertMessage, 'id' | 'timestamp'>) => {
     const newAlert: AlertMessage = {
@@ -264,14 +264,14 @@ export default function Dashboard() {
     }
   };
 
-  const getAlertTypeForEmergency = (type: string) => {
+  const getAlertTypeForEmergency = (type: string): 'danger' | 'warning' | 'info' => {
     const alertTypes = {
       lpg_gas_leak: 'danger',
       safety_equipment: 'warning',
       crane_worker: 'warning',
       lpg_explosion: 'danger'
     };
-    return alertTypes[type as keyof typeof alertTypes] || 'danger';
+    return (alertTypes[type as keyof typeof alertTypes] || 'danger') as 'danger' | 'warning' | 'info';
   };
 
   const getSeverityForEmergency = (type: string) => {
@@ -447,7 +447,7 @@ export default function Dashboard() {
             building: sensorMapping.building,
             position: positionData?.position || { top: '0%', left: '0%' },
             ppm: realtimeData?.value || 0,
-            status: realtimeData?.level || 'SAFE',
+            status: realtimeData?.level || 'COMMON',
             realtime: realtimeData ? {
               value: realtimeData.value,
               level: realtimeData.level,
@@ -462,7 +462,7 @@ export default function Dashboard() {
         // 통계 계산
         const stats = {
           total: combinedData.length,
-          safe: combinedData.filter((s: any) => s.realtime?.level === 'SAFE').length,
+          safe: combinedData.filter((s: any) => s.realtime?.level === 'COMMON').length,
           warning: combinedData.filter((s: any) => s.realtime?.level === 'WARN').length,
           danger: combinedData.filter((s: any) => s.realtime?.level === 'DANGER').length,
           critical: combinedData.filter((s: any) => s.realtime?.level === 'CRITICAL').length,
@@ -513,6 +513,7 @@ export default function Dashboard() {
       setWeatherInfo({
         temperature: 25,
         description: '맑음',
+        emoji: '☀️',
         humidity: 60,
         windSpeed: 3,
         location: '경남 창원시 마산합포구 진북면'
@@ -874,6 +875,22 @@ export default function Dashboard() {
       }
     } catch (error) {
       console.log('오디오 재생 실패:', error);
+    }
+  };
+
+  // 상태 텍스트 변환 함수
+  const getStatusText = (level: string) => {
+    switch (level) {
+      case 'CRITICAL':
+        return '치명적';
+      case 'DANGER':
+        return '위험';
+      case 'WARN':
+        return '주의';
+      case 'COMMON':
+        return '정상';
+      default:
+        return '정상';
     }
   };
 
@@ -1320,7 +1337,7 @@ export default function Dashboard() {
                 <div className="absolute top-[1%] left-[22%] w-[17%] h-[98%] border-2 border-gray-300 rounded-lg">
                   {gasSensors.filter(sensor => sensor.building === 'B').map((sensor) => {
                     // 실시간 데이터가 있으면 사용, 없으면 기본값
-                    const currentStatus = sensor.realtime?.level || 'SAFE';
+                    const currentStatus = sensor.realtime?.level || 'COMMON';
                     const currentValue = sensor.realtime?.value || 0;
                     const lastUpdate = sensor.realtime?.lastUpdate;
                     
@@ -1332,23 +1349,9 @@ export default function Dashboard() {
                           return 'bg-red-100 border-red-300 text-red-800';
                         case 'WARN':
                           return 'bg-yellow-100 border-yellow-300 text-yellow-800';
-                        case 'SAFE':
+                        case 'COMMON':
                         default:
                           return 'bg-green-100 border-green-300 text-green-800';
-                      }
-                    };
-
-                    const getStatusText = (level: string) => {
-                      switch (level) {
-                        case 'CRITICAL':
-                          return '치명적';
-                        case 'DANGER':
-                          return '위험';
-                        case 'WARN':
-                          return '주의';
-                        case 'SAFE':
-                        default:
-                          return '안전';
                       }
                     };
 
@@ -1381,7 +1384,7 @@ export default function Dashboard() {
                 <div>
                 {gasSensors.filter(sensor => sensor.building === 'A').map((sensor) => {
                     // 실시간 데이터가 있으면 사용, 없으면 기본값
-                    const currentStatus = sensor.realtime?.level || 'SAFE';
+                    const currentStatus = sensor.realtime?.level || 'COMMON';
                     const currentValue = sensor.realtime?.value || 0;
                     const lastUpdate = sensor.realtime?.lastUpdate;
                     
@@ -1393,23 +1396,9 @@ export default function Dashboard() {
                           return 'bg-red-100 border-red-300 text-red-800';
                         case 'WARN':
                           return 'bg-yellow-100 border-yellow-300 text-yellow-800';
-                        case 'SAFE':
+                        case 'COMMON':
                         default:
                           return 'bg-green-100 border-green-300 text-green-800';
-                      }
-                    };
-
-                    const getStatusText = (level: string) => {
-                      switch (level) {
-                        case 'CRITICAL':
-                          return '치명적';
-                        case 'DANGER':
-                          return '위험';
-                        case 'WARN':
-                          return '주의';
-                        case 'SAFE':
-                        default:
-                          return '안전';
                       }
                     };
 
@@ -1836,7 +1825,7 @@ export default function Dashboard() {
                       selectedSensor?.realtime?.level === 'WARN' ? 'text-yellow-600' :
                       'text-green-600'
                     }`}>
-                      {getStatusText(selectedSensor?.realtime?.level || 'SAFE')}
+                      {getStatusText(selectedSensor?.realtime?.level || 'COMMON')}
                     </div>
                   </div>
                   <div>
@@ -1931,6 +1920,15 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+      )}
+
+      {/* 비상 상황 팝업 */}
+      {showEmergencyPopup && (
+        <EmergencyPopup
+          incident={activeEmergency}
+          onClose={() => setShowEmergencyPopup(false)}
+          onComplete={handleEmergencyComplete}
+        />
       )}
     </div>
   );
