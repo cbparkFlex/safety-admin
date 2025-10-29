@@ -148,10 +148,10 @@ export async function sendBeaconCommand(beaconId: string, command: any, gatewayI
       };
 
       // 응답 리스너 등록
-      mqttClient.on('message', responseHandler);
+      mqttClient?.on('message', responseHandler);
       
       // 명령 전송
-      mqttClient.publish(subactionTopic, JSON.stringify(gatewayMessage), (error) => {
+      mqttClient?.publish(subactionTopic, JSON.stringify(gatewayMessage), (error) => {
         if (error) {
           console.error(`비콘 명령 전송 실패: ${beaconId}`, error);
           clearTimeout(timeout);
@@ -275,9 +275,9 @@ export function initializeMQTTClient(): Promise<boolean> {
 mqttClient.on('message', (topic, message) => {
   // MQTT 메시지 수신 로그 간소화 (5초마다만 출력)
   const now = Date.now();
-  if (!mqttClient.lastLogTime || now - mqttClient.lastLogTime > 5000) {
+  if (!(mqttClient as any).lastLogTime || now - (mqttClient as any).lastLogTime > 5000) {
     console.log(`📨 MQTT 메시지 수신: ${topic}`);
-    mqttClient.lastLogTime = now;
+    (mqttClient as any).lastLogTime = now;
   }
   
   // 응답 토픽에 대한 특별한 로그
@@ -331,10 +331,16 @@ async function subscribeToBeaconTopics() {
 
     const topics = gateways.map(gw => `${gw.mqttTopic}/+`); // +는 모든 하위 토픽
     const wildcardTopic = 'safety/beacon/+'; // 전체 beacon 토픽
-    const responseTopic = 'safety/beacon/gateway_1/response'; // Gateway 응답 토픽
-    const subactionTopic = 'safety/beacon/gateway_1/subaction'; // KBeacon configuration message 토픽
+    
+    // Gateway 01~08에 대한 동적 토픽 구독
+    const gatewayTopics = [];
+    for (let i = 1; i <= 8; i++) {
+      const gatewayNum = i.toString().padStart(2, '0'); // 01, 02, ..., 08
+      gatewayTopics.push(`safety/beacon/gateway_${gatewayNum}/response`); // Gateway 응답 토픽
+      gatewayTopics.push(`safety/beacon/gateway_${gatewayNum}/subaction`); // KBeacon configuration message 토픽
+    }
 
-    const allTopics = [...topics, wildcardTopic, responseTopic, subactionTopic];
+    const allTopics = [...topics, wildcardTopic, ...gatewayTopics];
     console.log(`구독할 토픽 목록: ${allTopics.join(', ')}`);
     
     for (const topic of allTopics) {
@@ -424,15 +430,36 @@ async function handleBeaconMessage(topic: string, message: Buffer) {
 async function handleGatewayMessage(topic: string, gatewayMessage: GatewayMessage) {
   // Gateway 메시지 처리 로그 간소화 (10초마다만 출력)
   const now = Date.now();
-  if (!handleGatewayMessage.lastLogTime || now - handleGatewayMessage.lastLogTime > 10000) {
+  if (!(handleGatewayMessage as any).lastLogTime || now - (handleGatewayMessage as any).lastLogTime > 10000) {
     console.log(`📡 Gateway 처리: ${gatewayMessage.obj.length}개 Beacon`);
-    handleGatewayMessage.lastLogTime = now;
+    (handleGatewayMessage as any).lastLogTime = now;
   }
   
   for (const beaconData of gatewayMessage.obj) {
     // MAC 주소로 Beacon을 찾아서 올바른 beaconId 사용
     const macAddress = beaconData.dmac.toUpperCase();
-    const gatewayId = `GW_${gatewayMessage.gmac}`;
+    
+    // Gateway MAC 주소로 실제 Gateway ID 찾기
+    let gatewayId = `GW_${gatewayMessage.gmac}`; // 기본값
+    
+    // Gateway MAC 주소를 통해 실제 Gateway ID 조회
+    try {
+      const gateway = await prisma.gateway.findFirst({
+        where: {
+          OR: [
+            { gatewayId: { contains: gatewayMessage.gmac } },
+            { mqttTopic: { contains: gatewayMessage.gmac } }
+          ]
+        },
+        select: { gatewayId: true }
+      });
+      
+      if (gateway) {
+        gatewayId = gateway.gatewayId;
+      }
+    } catch (error) {
+      console.error(`Gateway ID 조회 실패 (${gatewayMessage.gmac}):`, error);
+    }
     
     // MAC 주소로 Beacon 조회
     const beacon = await prisma.beacon.findFirst({
