@@ -124,6 +124,7 @@ export default function Dashboard() {
   const [selectedSensor, setSelectedSensor] = useState<any>(null);
   const [sensorChartData, setSensorChartData] = useState<any[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string>(''); // 선택된 날짜 (YYYY-MM-DD 형식)
   
   // CCTV 스트림 상태 (고정 URL 사용)
   const [cctvStreams, setCctvStreams] = useState<CctvStream[]>([]);
@@ -895,27 +896,49 @@ export default function Dashboard() {
   };
 
   // 센서 클릭 핸들러 추가
-  const handleSensorClick = async (sensor: any) => {
+  const handleSensorClick = async (sensor: any, date?: string) => {
     setSelectedSensor(sensor);
     setShowSensorChart(true);
     setChartLoading(true);
     
+    // 날짜가 지정되지 않았으면 오늘 날짜로 설정
+    const targetDate = date || selectedDate || new Date().toISOString().split('T')[0];
+    setSelectedDate(targetDate);
+    
     try {
-      // 해당 센서의 오늘 데이터 가져오기
-      const today = new Date();
-      const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+      // 선택된 날짜의 시작 시간과 종료 시간 계산
+      const selectedDateObj = new Date(targetDate);
+      const startOfDay = new Date(
+        selectedDateObj.getFullYear(),
+        selectedDateObj.getMonth(),
+        selectedDateObj.getDate(),
+        0, 0, 0
+      );
+      const endOfDay = new Date(
+        selectedDateObj.getFullYear(),
+        selectedDateObj.getMonth(),
+        selectedDateObj.getDate(),
+        23, 59, 59
+      );
+      
+      // 현재 시간까지의 시간 차이 계산 (hours 파라미터용)
+      const now = new Date();
+      const hoursDiff = Math.ceil((now.getTime() - startOfDay.getTime()) / (1000 * 60 * 60));
+      const hours = Math.max(1, Math.min(hoursDiff, 168)); // 최소 1시간, 최대 7일(168시간)
       
       const response = await fetch(
-        `/api/gas?building=${sensor.building}&hours=24&limit=1000`
+        `/api/gas?building=${sensor.building}&hours=${hours}&limit=10000`
       );
       const result = await response.json();
       
       if (result.success) {
-        // 해당 센서의 데이터만 필터링
-        const sensorData = result.data.recent.filter((data: any) => 
-          data.sensorId === `${sensor.building}_${sensor.name}`
-        );
+        // 해당 센서의 데이터만 필터링하고 선택된 날짜 범위 내의 데이터만 포함
+        const sensorData = result.data.recent.filter((data: any) => {
+          const dataTimestamp = new Date(data.timestamp);
+          return data.sensorId === `${sensor.building}_${sensor.name}` &&
+                 dataTimestamp >= startOfDay &&
+                 dataTimestamp <= endOfDay;
+        });
         
         // 시간순으로 정렬
         sensorData.sort((a: any, b: any) => 
@@ -931,18 +954,46 @@ export default function Dashboard() {
     }
   };
 
+  // 날짜 변경 핸들러
+  const handleDateChange = async (date: string) => {
+    setSelectedDate(date);
+    if (selectedSensor) {
+      // 날짜가 변경되면 해당 날짜의 데이터를 다시 로드
+      await handleSensorClick(selectedSensor, date);
+    }
+  };
+
   // 차트 데이터 준비
   const prepareChartData = () => {
     if (!sensorChartData.length) return null;
 
-    const labels = sensorChartData.map((data: any) => 
-      new Date(data.timestamp).toLocaleTimeString('ko-KR', {
-        hour: '2-digit',
-        minute: '2-digit'
-      })
+    // 시간순으로 정렬된 데이터 사용 (이미 정렬되어 있지만 확실히 하기 위해)
+    const sortedData = [...sensorChartData].sort((a: any, b: any) => 
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
 
-    const values = sensorChartData.map((data: any) => data.value);
+    const labels = sortedData.map((data: any) => {
+      const date = new Date(data.timestamp);
+      // 선택된 날짜가 오늘이 아니면 날짜와 시간 모두 표시
+      const today = new Date().toISOString().split('T')[0];
+      const isToday = selectedDate === today || (!selectedDate && date.toISOString().split('T')[0] === today);
+      
+      if (isToday) {
+        return date.toLocaleTimeString('ko-KR', {
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      } else {
+        return date.toLocaleString('ko-KR', {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      }
+    });
+
+    const values = sortedData.map((data: any) => data.value);
 
     return {
       labels,
@@ -1800,13 +1851,66 @@ export default function Dashboard() {
           <div className="bg-white rounded-lg p-6 w-11/12 max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">
-                {selectedSensor?.building}동 {selectedSensor?.name}번 센서 - 오늘 데이터
+                {selectedSensor?.building}동 {selectedSensor?.name}번 센서 데이터
               </h2>
               <button
                 onClick={() => setShowSensorChart(false)}
                 className="text-gray-500 hover:text-gray-700 text-2xl"
               >
                 ×
+              </button>
+            </div>
+            
+            {/* 날짜 선택 캘린더 */}
+            <div className="mb-4 flex items-center space-x-4">
+              <label htmlFor="datePicker" className="text-sm font-medium text-gray-700">
+                날짜 선택:
+              </label>
+              <input
+                id="datePicker"
+                type="date"
+                value={selectedDate || new Date().toISOString().split('T')[0]}
+                onChange={(e) => handleDateChange(e.target.value)}
+                max={new Date().toISOString().split('T')[0]} // 오늘 이후 날짜 선택 불가
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <button
+                onClick={() => {
+                  const today = new Date().toISOString().split('T')[0];
+                  handleDateChange(today);
+                }}
+                className="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
+              >
+                오늘
+              </button>
+              <button
+                onClick={() => {
+                  if (selectedDate) {
+                    const date = new Date(selectedDate);
+                    date.setDate(date.getDate() - 1);
+                    handleDateChange(date.toISOString().split('T')[0]);
+                  }
+                }}
+                className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm"
+                disabled={!selectedDate}
+              >
+                이전 날짜
+              </button>
+              <button
+                onClick={() => {
+                  if (selectedDate) {
+                    const date = new Date(selectedDate);
+                    date.setDate(date.getDate() + 1);
+                    const today = new Date().toISOString().split('T')[0];
+                    if (date.toISOString().split('T')[0] <= today) {
+                      handleDateChange(date.toISOString().split('T')[0]);
+                    }
+                  }
+                }}
+                className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm disabled:bg-gray-300 disabled:cursor-not-allowed"
+                disabled={!selectedDate || selectedDate >= new Date().toISOString().split('T')[0]}
+              >
+                다음 날짜
               </button>
             </div>
             
@@ -1872,6 +1976,10 @@ export default function Dashboard() {
                             display: true,
                             text: '시간',
                           },
+                          ticks: {
+                            maxRotation: 45,
+                            minRotation: 45,
+                          },
                         },
                       },
                     }}
@@ -1880,9 +1988,15 @@ export default function Dashboard() {
                 
                 {/* 데이터 테이블 */}
                 <div className="max-h-64 overflow-y-auto">
-                  <h3 className="text-lg font-medium mb-2">상세 데이터</h3>
+                  <h3 className="text-lg font-medium mb-2">
+                    상세 데이터 ({selectedDate ? new Date(selectedDate).toLocaleDateString('ko-KR', { 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    }) : '오늘'} - 총 {sensorChartData.length}개)
+                  </h3>
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-gray-50 sticky top-0">
                       <tr>
                         <th className="px-4 py-2 text-left">시간</th>
                         <th className="px-4 py-2 text-left">값 (PPM)</th>
@@ -1891,7 +2005,7 @@ export default function Dashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {sensorChartData.slice(-20).reverse().map((data: any, index: number) => (
+                      {sensorChartData.length > 0 ? [...sensorChartData].reverse().map((data: any, index: number) => (
                         <tr key={index} className="border-b">
                           <td className="px-4 py-2">
                             {new Date(data.timestamp).toLocaleString('ko-KR')}
@@ -1908,7 +2022,13 @@ export default function Dashboard() {
                           </td>
                           <td className="px-4 py-2 text-gray-500">{data.ip || '-'}</td>
                         </tr>
-                      ))}
+                      )) : (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-4 text-center text-gray-500">
+                            선택한 날짜에 데이터가 없습니다.
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
