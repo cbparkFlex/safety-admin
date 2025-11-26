@@ -16,7 +16,7 @@ const pendingCommands = new Map<string, { timestamp: number; promise: Promise<bo
 const COMMAND_DEDUP_WINDOW = 5000; // 5초 내 중복 명령 무시
 
 // MQTT 클라이언트 설정
-const MQTT_BROKER_URL = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883';
+const MQTT_BROKER_URL = process.env.MQTT_BROKER_URL || 'mqtt://192.168.31.88:1883';
 const MQTT_USERNAME = process.env.MQTT_USERNAME || '';
 const MQTT_PASSWORD = process.env.MQTT_PASSWORD || '';
 
@@ -105,8 +105,6 @@ export async function sendBeaconCommand(beaconId: string, command: any, gatewayI
       }
     };
     
-    console.log(`📤 비콘 명령 전송: ${beaconId} → ${targetGateway.gatewayId} (${subactionTopic})`, gatewayMessage);
-    
     // Promise를 사용하여 dAck 응답 대기
     const commandPromise = new Promise<boolean>((resolve) => {
       const timeout = setTimeout(() => {
@@ -120,9 +118,23 @@ export async function sendBeaconCommand(beaconId: string, command: any, gatewayI
         try {
           const rawMessage = JSON.parse(message.toString());
           
+          // dAck 메시지인지 먼저 확인 (디버깅용)
+          if (rawMessage.msg === 'dAck') {
+            console.log(`🔔 dAck 메시지 수신: ${topic}`, {
+              msg: rawMessage.msg,
+              mac: rawMessage.mac,
+              seq: rawMessage.seq,
+              expectedSeq: seq,
+              expectedMac: command.mac,
+              rslt: rawMessage.rslt,
+              cause: rawMessage.cause,
+              gmac: rawMessage.gmac
+            });
+          }
+          
           // 해당 시퀀스 번호의 dAck 응답인지 확인
           if (rawMessage.msg === 'dAck' && rawMessage.seq === seq && rawMessage.mac === command.mac) {
-            console.log(`📥 Gateway dAck 응답 수신: ${topic}`, {
+            console.log(`📥 Gateway dAck 응답 수신 (매칭됨): ${topic}`, {
               mac: rawMessage.mac,
               seq: rawMessage.seq,
               rslt: rawMessage.rslt,
@@ -134,11 +146,12 @@ export async function sendBeaconCommand(beaconId: string, command: any, gatewayI
             mqttClient?.removeListener('message', responseHandler);
             pendingCommands.delete(commandKey);
             
-            if (rawMessage.rslt === 'succ' && rawMessage.cause === 0) {
-              console.log(`✅ 비콘 명령 성공: ${beaconId} (${rawMessage.mac})`);
+            // rslt가 'succ'이면 성공으로 처리 (cause 값과 무관)
+            if (rawMessage.rslt === 'succ') {
+              console.log(`✅ 비콘 명령 성공: ${beaconId} (${rawMessage.mac}) - cause: ${rawMessage.cause}`);
               resolve(true);
             } else {
-              console.log(`❌ 비콘 명령 실패: ${beaconId} (${rawMessage.mac}) - cause: ${rawMessage.cause}`);
+              console.log(`❌ 비콘 명령 실패: ${beaconId} (${rawMessage.mac}) - rslt: ${rawMessage.rslt}, cause: ${rawMessage.cause}`);
               resolve(false);
             }
           }
@@ -150,10 +163,9 @@ export async function sendBeaconCommand(beaconId: string, command: any, gatewayI
       // 응답 리스너 등록
       mqttClient?.on('message', responseHandler);
       
-      // 명령 전송
-      mqttClient?.publish(subactionTopic, JSON.stringify(gatewayMessage), (error) => {
+      mqttClient?.publish(subactionTopic, JSON.stringify(gatewayMessage), { qos: 1 }, (error) => {
         if (error) {
-          console.error(`비콘 명령 전송 실패: ${beaconId}`, error);
+          console.error(`❌ 비콘 명령 전송 실패: ${beaconId}`, error);
           clearTimeout(timeout);
           mqttClient?.removeListener('message', responseHandler);
           pendingCommands.delete(commandKey);
@@ -249,11 +261,14 @@ export function initializeMQTTClient(): Promise<boolean> {
         options.password = MQTT_PASSWORD;
       }
 
-      console.log('MQTT 클라이언트 초기화 시작...');
+      console.log('🔌 MQTT 클라이언트 초기화 시작...');
+      console.log(`📍 MQTT Broker URL: ${MQTT_BROKER_URL}`);
+      console.log(`🔑 인증: ${MQTT_USERNAME ? '사용' : '미사용'}`);
       mqttClient = mqtt.connect(MQTT_BROKER_URL, options);
 
       mqttClient.on('connect', () => {
-        console.log('MQTT 클라이언트가 연결되었습니다.');
+        console.log('✅ MQTT 클라이언트가 연결되었습니다.');
+        console.log(`📡 연결된 Broker: ${MQTT_BROKER_URL}`);
         console.log('토픽 구독 시작...');
         subscribeToBeaconTopics();
         
@@ -273,18 +288,26 @@ export function initializeMQTTClient(): Promise<boolean> {
       });
 
 mqttClient.on('message', (topic, message) => {
-  // MQTT 메시지 수신 로그 간소화 (5초마다만 출력)
-  const now = Date.now();
-  if (!(mqttClient as any).lastLogTime || now - (mqttClient as any).lastLogTime > 5000) {
-    console.log(`📨 MQTT 메시지 수신: ${topic}`);
-    (mqttClient as any).lastLogTime = now;
+  // MQTT에서 들어오는 모든 메시지 상세 로그 출력
+  try {
+    const messageString = message.toString();
+    const messageLength = message.length;
+  
+    // JSON 파싱 시도
+    try {
+      const parsedMessage = JSON.parse(messageString);
+      
+    } catch (parseError) {
+      console.log('⚠️ JSON 파싱 실패 (메시지가 JSON 형식이 아닐 수 있음):', parseError);
+      console.log('원본 메시지 (hex):', message.toString('hex').substring(0, 100));
+    }
+    
+    console.log('='.repeat(80));
+  } catch (error) {
+    console.error('❌ MQTT 메시지 로그 출력 중 오류:', error);
   }
   
-  // 응답 토픽에 대한 특별한 로그
-  if (topic.includes('/response')) {
-    console.log(`🔔 Gateway 응답 토픽 수신: ${topic}`);
-  }
-  
+  // 기존 메시지 처리 함수 호출
   handleBeaconMessage(topic, message);
 });
 
@@ -329,29 +352,31 @@ async function subscribeToBeaconTopics() {
     console.log(`등록된 Gateway 개수: ${gateways.length}`);
     gateways.forEach(gw => console.log(`- Topic: ${gw.mqttTopic}`));
 
-    const topics = gateways.map(gw => `${gw.mqttTopic}/+`); // +는 모든 하위 토픽
-    const wildcardTopic = 'safety/beacon/+'; // 전체 beacon 토픽
-    
     // Gateway 01~08에 대한 동적 토픽 구독
     const gatewayTopics = [];
     for (let i = 1; i <= 8; i++) {
       const gatewayNum = i.toString().padStart(2, '0'); // 01, 02, ..., 08
-      gatewayTopics.push(`safety/beacon/gateway_${gatewayNum}/response`); // Gateway 응답 토픽
+      gatewayTopics.push(`safety/beacon/gateway_${gatewayNum}/publish`); // Gateway publish 토픽
       gatewayTopics.push(`safety/beacon/gateway_${gatewayNum}/subaction`); // KBeacon configuration message 토픽
+      gatewayTopics.push(`safety/beacon/gateway_${gatewayNum}/response`); // Gateway 응답 토픽 (dAck 포함)
+      gatewayTopics.push(`safety/beacon/gateway_${gatewayNum}/pubaction`); // Gateway pubaction 토픽
     }
 
-    const allTopics = [...topics, wildcardTopic, ...gatewayTopics];
+    const allTopics = [...gatewayTopics];
     console.log(`구독할 토픽 목록: ${allTopics.join(', ')}`);
     
     for (const topic of allTopics) {
-      mqttClient.subscribe(topic, (error) => {
+      mqttClient.subscribe(topic, { qos: 0 }, (error, granted) => {
         if (error) {
-          console.error(`토픽 구독 실패 (${topic}):`, error);
+          console.error(`❌ 토픽 구독 실패 (${topic}):`, error);
         } else {
-          console.log(`토픽 구독 성공: ${topic}`);
+          console.log(`✅ 토픽 구독 성공: ${topic}`, granted);
         }
       });
     }
+    
+    // 구독 확인을 위한 추가 로그
+    console.log(`📋 총 ${allTopics.length}개 토픽 구독 요청 완료`);
   } catch (error) {
     console.error('토픽 구독 설정 실패:', error);
   }
@@ -372,7 +397,7 @@ async function handleBeaconMessage(topic: string, message: Buffer) {
 
     // 비콘 명령 메시지인지 확인 (subaction 토픽)
     if (topic.includes('/subaction') && (rawMessage.msg === 'dData' || rawMessage.msg === 'cfg')) {
-      console.log(`📤 비콘 명령 메시지 수신: ${topic}`, rawMessage);
+ 
       console.log(`🔍 Gateway가 명령을 받았습니다. 응답을 기다리는 중...`);
       return; // 명령 메시지는 처리하지 않고 종료
     }

@@ -88,8 +88,6 @@ export async function POST(request: NextRequest) {
       // ledOn과 ledOff는 vibration에는 필요하지 않음
     };
 
-    console.log(`📳 비콘 진동 명령 전송: ${targetBeaconId}`, ringCommand);
-
     // MQTT를 통해 Gateway로 비콘 명령 전송
     const commandSent = await sendBeaconCommand(targetBeaconId, ringCommand, targetGatewayId);
     
