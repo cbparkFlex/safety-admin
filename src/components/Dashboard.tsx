@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Users, Bell, TrendingUp, TrendingDown, Clock, Wrench, Mountain, AlertTriangle, History, Eye, Vibrate } from 'lucide-react';
+import { Users, Bell, TrendingUp, TrendingDown, Clock, Wrench, Mountain, AlertTriangle, History, Eye, Vibrate, Smartphone } from 'lucide-react';
 import EmergencyPopup from './EmergencyPopup';
 import { useRouter } from 'next/navigation';
 import { Line } from 'react-chartjs-2';
@@ -97,6 +97,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [alertMessages, setAlertMessages] = useState<AlertMessage[]>([]);
   const [audioEnabled, setAudioEnabled] = useState(true); // 오디오 활성화 상태
+  const [vibratingBeacons, setVibratingBeacons] = useState<Set<string>>(new Set());
   
   const [surveillanceRecords, setSurveillanceRecords] = useState<any[]>([]);
   const [gasSensors, setGasSensors] = useState<any[]>([]);
@@ -539,24 +540,40 @@ export default function Dashboard() {
   // 진동 신호 보내기
   const handleVibrate = async (equipmentId: string, workerName: string) => {
     try {
+      // 진동 중인 비콘 목록에 추가
+      setVibratingBeacons(prev => new Set(prev).add(equipmentId));
+      
       const response = await fetch('/api/beacon-vibrate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ equipmentId }),
+        body: JSON.stringify({ 
+          equipmentId,
+          ringType: 4, // 0x4: vibration
+          ringTime: 4000, // 1초
+        }),
       });
 
-      const result = await response.json();
-
-      if (result.success) {
-        alert(`${workerName}님의 장비(${equipmentId})에 진동 신호를 보냈습니다.`);
+      if (response.ok) {
+        console.log(`장비 ${equipmentId} 진동 명령 전송 완료`);
       } else {
-        alert(`진동 신호 전송 실패: ${result.message || result.error || '알 수 없는 오류'}`);
+        const error = await response.json();
+        console.error(`장비 ${equipmentId} 진동 명령 실패:`, error.message);
+        alert(`진동 명령 전송 실패: ${error.message}`);
       }
     } catch (error) {
-      console.error('진동 신호 전송 오류:', error);
-      alert('진동 신호 전송 중 오류가 발생했습니다.');
+      console.error('진동 명령 전송 중 오류:', error);
+      alert('진동 명령 전송 중 오류가 발생했습니다.');
+    } finally {
+      // 1초 후 진동 중인 비콘 목록에서 제거
+      setTimeout(() => {
+        setVibratingBeacons(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(equipmentId);
+          return newSet;
+        });
+      }, 1000);
     }
   };
 
@@ -1439,7 +1456,16 @@ export default function Dashboard() {
                     const currentValue = sensor.realtime?.value || 0;
                     const lastUpdate = sensor.realtime?.lastUpdate;
                     
+                    // A동 1~3번 센서인지 확인
+                    const sensorNumber = parseInt(sensor.name) || 0;
+                    const isExcludedSensor = sensorNumber >= 1 && sensorNumber <= 3;
+                    
                     const getStatusColor = (level: string) => {
+                      // A동 1~3번 센서를 제외한 나머지는 붉은 색으로 표시
+                      if (!isExcludedSensor) {
+                        return 'bg-red-100 border-red-300 text-red-800';
+                      }
+                      
                       switch (level) {
                         case 'CRITICAL':
                           return 'bg-red-100 border-red-300 text-red-800';
@@ -1822,11 +1848,16 @@ export default function Dashboard() {
                     <div className="flex items-center justify-center pt-2">
                       <button
                         onClick={() => handleVibrate(worker.equipmentId, worker.name)}
-                        className="flex items-center space-x-1 bg-orange-500 text-white px-3 py-1 rounded-md hover:bg-orange-600 transition-colors text-sm"
-                        title={`${worker.name}님의 장비에 진동 신호 보내기`}
+                        disabled={vibratingBeacons.has(worker.equipmentId)}
+                        className={`inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md transition-colors ${
+                          vibratingBeacons.has(worker.equipmentId)
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-blue-100 text-blue-700 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                        }`}
+                        title="비콘 진동 (1초)"
                       >
-                        <Vibrate className="w-4 h-4" />
-                        <span>진동</span>
+                        <Smartphone className="w-3 h-3 mr-1" />
+                        {vibratingBeacons.has(worker.equipmentId) ? '진동 중...' : '진동'}
                       </button>
                     </div>
                   </div>

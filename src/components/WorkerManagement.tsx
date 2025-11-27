@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Plus, Mountain, Vibrate } from 'lucide-react';
+import { Search, Plus, Mountain, Vibrate, Smartphone } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -26,6 +26,7 @@ export default function WorkerManagement() {
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [vibratingBeacons, setVibratingBeacons] = useState<Set<string>>(new Set());
 
   // 작업자 데이터 가져오기
   const fetchWorkers = async (search?: string) => {
@@ -71,24 +72,40 @@ export default function WorkerManagement() {
   // 진동 신호 보내기
   const handleVibrate = async (equipmentId: string, workerName: string) => {
     try {
+      // 진동 중인 비콘 목록에 추가
+      setVibratingBeacons(prev => new Set(prev).add(equipmentId));
+      
       const response = await fetch('/api/beacon-vibrate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ equipmentId }),
+        body: JSON.stringify({ 
+          equipmentId,
+          ringType: 4, // 0x4: vibration
+          ringTime: 4000, // 1초
+        }),
       });
 
-      const result = await response.json();
-
-      if (result.success) {
-        alert(`${workerName}님의 장비(${equipmentId})에 진동 신호를 보냈습니다.`);
+      if (response.ok) {
+        console.log(`장비 ${equipmentId} 진동 명령 전송 완료`);
       } else {
-        alert(`진동 신호 전송 실패: ${result.message || result.error || '알 수 없는 오류'}`);
+        const error = await response.json();
+        console.error(`장비 ${equipmentId} 진동 명령 실패:`, error.message);
+        alert(`진동 명령 전송 실패: ${error.message}`);
       }
     } catch (error) {
-      console.error('진동 신호 전송 오류:', error);
-      alert('진동 신호 전송 중 오류가 발생했습니다.');
+      console.error('진동 명령 전송 중 오류:', error);
+      alert('진동 명령 전송 중 오류가 발생했습니다.');
+    } finally {
+      // 1초 후 진동 중인 비콘 목록에서 제거
+      setTimeout(() => {
+        setVibratingBeacons(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(equipmentId);
+          return newSet;
+        });
+      }, 1000);
     }
   };
 
@@ -214,11 +231,16 @@ export default function WorkerManagement() {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <button
                       onClick={() => handleVibrate(worker.equipmentId, worker.name)}
-                      className="flex items-center space-x-1 bg-orange-500 text-white px-3 py-1 rounded-md hover:bg-orange-600 transition-colors text-sm"
-                      title={`${worker.name}님의 장비에 진동 신호 보내기`}
+                      disabled={vibratingBeacons.has(worker.equipmentId)}
+                      className={`inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md transition-colors ${
+                        vibratingBeacons.has(worker.equipmentId)
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : 'bg-blue-100 text-blue-700 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                      }`}
+                      title="비콘 진동 (1초)"
                     >
-                      <Vibrate className="w-4 h-4" />
-                      <span>진동</span>
+                      <Smartphone className="w-3 h-3 mr-1" />
+                      {vibratingBeacons.has(worker.equipmentId) ? '진동 중...' : '진동'}
                     </button>
                   </td>
                 </tr>

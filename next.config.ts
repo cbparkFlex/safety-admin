@@ -10,6 +10,9 @@ const nextConfig: NextConfig = {
   // 보안 설정
   poweredByHeader: false,
   
+  // 개발 인디케이터 비활성화 (화면 하단 N 버튼 숨김)
+  devIndicators: false,
+  
   // 이미지 최적화
   images: {
     unoptimized: false,
