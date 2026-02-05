@@ -37,19 +37,18 @@ const generateGasSensorPositions = (startTop: number, startRight: number, topInt
 // 가스 센서 위치 데이터 (B동 12개, A동 10개)
 const GAS_SENSOR_POSITIONS = [
   // B동 (왼쪽) - 12개
-  { id: 1, name: '1번',   building: 'B동', position: { top: '5%', left: '13%' } },
-  { id: 2, name: '2번',   building: 'B동', position: { top: '5%', left: '65%' } },
-  { id: 3, name: '3번',   building: 'B동', position: { top: '18%', left: '13%' } },
-  { id: 4, name: '4번',   building: 'B동', position: { top: '18%', left: '65%' } },
-  { id: 5, name: '5번',   building: 'B동', position: { top: '31%', left: '13%' } },
-  { id: 6, name: '6번',   building: 'B동', position: { top: '31%', left: '65%' } },
-  { id: 7, name: '7번',   building: 'B동', position: { top: '44%', left: '13%' } },
-  { id: 8, name: '8번',   building: 'B동', position: { top: '44%', left: '65%' } },
-  { id: 9, name: '9번',   building: 'B동', position: { top: '57%', left: '13%' } },
-  { id: 10, name: '10번', building: 'B동', position: { top: '57%', left: '65%' } },
-  { id: 11, name: '11번', building: 'B동', position: { top: '70%', left: '13%' } },
-  { id: 12, name: '12번', building: 'B동', position: { top: '70%', left: '65%' } },
-  { id: 13, name: '13번', building: 'B동', position: { top: '83%', left: '13%' } },
+  { id: 1, name: '1번',   building: 'B동', position: { top: '1%', left: '13%' } },
+  { id: 2, name: '2번',   building: 'B동', position: { top: '1%', left: '65%' } },
+  { id: 3, name: '3번',   building: 'B동', position: { top: '17%', left: '13%' } },
+  { id: 4, name: '4번',   building: 'B동', position: { top: '17%', left: '65%' } },
+  { id: 5, name: '5번',   building: 'B동', position: { top: '33%', left: '13%' } },
+  { id: 6, name: '6번',   building: 'B동', position: { top: '33%', left: '65%' } },
+  { id: 7, name: '7번',   building: 'B동', position: { top: '49%', left: '13%' } },
+  { id: 8, name: '8번',   building: 'B동', position: { top: '49%', left: '65%' } },
+  { id: 9, name: '9번',   building: 'B동', position: { top: '65%', left: '13%' } },
+  { id: 10, name: '10번', building: 'B동', position: { top: '65%', left: '65%' } },
+  { id: 11, name: '11번', building: 'B동', position: { top: '81%', left: '13%' } },
+  { id: 12, name: '12번', building: 'B동', position: { top: '81%', left: '65%' } },
   
   // A동 (오른쪽) - 10개 (자동 생성)
   // 시작점: top 12%, right 17%, 간격: top 8%, right 5%

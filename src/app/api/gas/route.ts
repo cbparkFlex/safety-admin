@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { timestamp, sensor, value, level, ip } = body;
+    const { timestamp, sensor, value, level } = body;
 
     // 필수 필드 검증
     if (!timestamp || !sensor || value === undefined || !level) {
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     const createdAtDate = new Date();
     const timeDiff = createdAtDate.getTime() - timestampDate.getTime();
 
-    // 가스 센서 데이터 저장
+    // 가스 센서 데이터 저장 (IP 필드 제거)
     const gasSensorData = await prisma.gasSensorData.create({
       data: {
         sensorId: sensor,
@@ -31,12 +31,13 @@ export async function POST(request: NextRequest) {
         value: parseFloat(value),
         level: level,
         timestamp: timestampDate,
-        ip: ip || null,
         timeDiff: timeDiff
       }
     });
 
-    // WARN 또는 DANGER 레벨 감지 시 비상상황 자동 생성
+    // LPG 누출 감지 알람 비활성화 (사용자 요청)
+    // WARN 또는 DANGER 레벨 감지 시 비상상황 자동 생성 기능이 비활성화되었습니다.
+    /*
     if (level === 'WARN' || level === 'DANGER') {
       try {
         // LPG 가스 누출 SOP 조회
@@ -120,6 +121,7 @@ export async function POST(request: NextRequest) {
         // 비상상황 생성 실패해도 가스 센서 데이터는 정상 저장
       }
     }
+    */
 
     return NextResponse.json({
       success: true,
@@ -129,7 +131,6 @@ export async function POST(request: NextRequest) {
         sensor: sensor,
         value: value,
         level: level,
-        ip: ip,
         timestamp: timestamp
       }
     });
@@ -169,32 +170,64 @@ export async function GET(request: NextRequest) {
       where.building = building;
     }
 
-    // 최근 데이터 조회
+    // 최근 데이터 조회 (IP 필드 제외)
     const gasSensorData = await prisma.gasSensorData.findMany({
       where,
       orderBy: { timestamp: 'desc' },
-      take: limit
-    });
-
-    // 센서별 최신 데이터 집계 (DB에 저장된 가장 최근 데이터)
-    const latestData = await prisma.gasSensorData.groupBy({
-      by: ['building', 'sensorId'],
-      _max: {
-        timestamp: true,
+      take: limit,
+      select: {
+        id: true,
+        sensorId: true,
+        building: true,
         value: true,
-        level: true
-      },
-      orderBy: {
-        building: 'asc'
+        level: true,
+        timestamp: true,
+        createdAt: true,
+        timeDiff: true
       }
     });
 
+    // 센서별 최신 데이터 조회 (각 센서의 가장 최근 timestamp 레코드)
+    // 먼저 각 센서의 최신 timestamp를 찾기
+    const latestTimestamps = await prisma.gasSensorData.groupBy({
+      by: ['building', 'sensorId'],
+      _max: {
+        timestamp: true
+      }
+    });
+
+    // 각 센서별로 최신 timestamp에 해당하는 전체 레코드 조회
+    const latestRecords = await Promise.all(
+      latestTimestamps.map(async (item) => {
+        const latestRecord = await prisma.gasSensorData.findFirst({
+          where: {
+            building: item.building,
+            sensorId: item.sensorId,
+            timestamp: item._max.timestamp
+          },
+          orderBy: {
+            createdAt: 'desc' // 같은 timestamp가 여러 개일 경우 최신 것
+          },
+          select: {
+            sensorId: true,
+            building: true,
+            value: true,
+            level: true,
+            timestamp: true
+          }
+        });
+        return latestRecord;
+      })
+    );
+
     // 집계 데이터를 센서별로 정리
-    const sensorSummary = latestData.reduce((acc: any, item) => {
-      const key = item.sensorId; // sensorId를 직접 키로 사용
+    const sensorSummary = latestRecords.reduce((acc: any, item) => {
+      if (!item) return acc; // null 체크
+      
+      const key = item.sensorId;
       
       // level 값 정규화
-      let normalizedLevel = item._max.level;
+      let normalizedLevel = item.level;
       if (normalizedLevel === 'WARN') {
         normalizedLevel = 'GAS_WARNING';
       } else if (normalizedLevel === 'DANGER') {
@@ -208,9 +241,9 @@ export async function GET(request: NextRequest) {
       acc[key] = {
         building: item.building,
         sensorId: item.sensorId,
-        value: item._max.value,
+        value: item.value,
         level: normalizedLevel,
-        lastUpdate: item._max.timestamp
+        lastUpdate: item.timestamp
       };
       return acc;
     }, {});
