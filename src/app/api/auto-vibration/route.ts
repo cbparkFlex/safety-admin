@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Gateway 설정 조회
+    // Gateway 설정 조회 (근접 알림 메뉴에서 설정한 근접 경고 거리·자동 진동 사용)
     const gateway = await prisma.gateway.findUnique({
       where: { gatewayId },
       select: {
@@ -55,13 +55,14 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 근접 경고 거리 확인
-    if (distance > gateway.proximityThreshold) {
+    // 근접 알림 메뉴에서 설정한 "근접 경고 거리"로 판단 (이 거리 이내일 때만 진동)
+    const threshold = gateway.proximityThreshold ?? 5.0;
+    if (distance > threshold) {
       return NextResponse.json({
         success: true,
         message: "근접 경고 거리보다 멀어서 진동을 보내지 않습니다.",
         vibrationSent: false,
-        threshold: gateway.proximityThreshold,
+        threshold,
         currentDistance: distance
       });
     }
@@ -69,16 +70,17 @@ export async function POST(request: NextRequest) {
     // 오래된 쿨다운 데이터 정리
     cleanupOldVibrations();
 
-    // 중복 진동 방지 (같은 비콘에 대해 10초 내 중복 진동 방지)
-    const vibrationKey = `${beaconId}_${gatewayId}`;
+    // 중복 진동 방지: 같은 비콘(beaconId)에 대해 10초 내에는 한 번만 진동
+    // → Gateway A·B가 동시에 1m 이하로 감지해도 비콘은 한 번만 진동
+    const vibrationKeyByBeacon = beaconId;
     const now = Date.now();
-    const lastVibration = recentVibrations.get(vibrationKey);
-    
+    const lastVibration = recentVibrations.get(vibrationKeyByBeacon);
+
     if (lastVibration && (now - lastVibration) < VIBRATION_COOLDOWN) {
-      console.log(`⏳ 중복 진동 방지: ${beaconId} (${now - lastVibration}ms 전에 진동됨)`);
+      console.log(`⏳ 중복 진동 방지: ${beaconId} (${Math.round((now - lastVibration) / 1000)}초 전에 이미 진동됨, 이번 Gateway=${gatewayId})`);
       return NextResponse.json({
         success: true,
-        message: "중복 진동 방지: 최근에 이미 진동을 보냈습니다.",
+        message: "중복 진동 방지: 해당 비콘에 최근 이미 진동을 보냈습니다.",
         vibrationSent: false,
         cooldownRemaining: VIBRATION_COOLDOWN - (now - lastVibration)
       });
@@ -100,33 +102,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 진동 명령 전송 (MQTT를 통해 실제 진동 명령 전송)
-    console.log(`자동 진동 알림: ${beacon.name} (${gateway.name}, ${distance.toFixed(2)}m)`);
-    
+    // 진동 명령 전송 (성공 시 mqttClient에서 "✅ 알람 명령 전송 성공" 로그 출력)
     try {
-      // MQTT를 통해 실제 진동 명령 전송
       const { sendBeaconCommand } = await import('@/lib/mqttClient');
-      
       const ringCommand = {
         msg: "ring",
-        mac: beacon.macAddress.replace(/:/g, ''), // KBeacon MAC 주소 (콜론 제거)
-        ringType: 4, // 0x4: vibration
-        ringTime: 3000, // 3초
+        mac: beacon.macAddress.replace(/:/g, ''),
+        ringType: 4,
+        ringTime: 3000,
         ledOn: 500,
         ledOff: 1500,
       };
-
       const commandSent = await sendBeaconCommand(beaconId, ringCommand, gatewayId);
-      
       if (commandSent) {
-        console.log(`MQTT 진동 명령 전송 성공: ${beacon.name} (${gateway.name})`);
-        // 진동 전송 성공 시 쿨다운 기록
-        recentVibrations.set(vibrationKey, now);
-      } else {
-        console.error(`MQTT 진동 명령 전송 실패: ${beacon.name} (${gateway.name})`);
+        recentVibrations.set(vibrationKeyByBeacon, now);
       }
     } catch (error) {
-      console.error(`MQTT 진동 명령 전송 중 오류: ${beacon.name}`, error);
+      console.error(`진동 명령 전송 오류: ${beaconId}`, error);
     }
 
     // 근접 알림 기록 생성
@@ -160,7 +152,7 @@ export async function POST(request: NextRequest) {
       beaconName: beacon.name,
       gatewayName: gateway.name,
       distance: distance,
-      threshold: gateway.proximityThreshold
+      threshold
     });
 
   } catch (error) {

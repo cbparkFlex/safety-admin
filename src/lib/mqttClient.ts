@@ -117,47 +117,19 @@ export async function sendBeaconCommand(beaconId: string, command: any, gatewayI
       const responseHandler = (topic: string, message: Buffer) => {
         try {
           const rawMessage = JSON.parse(message.toString());
-          
-          // dAck 메시지인지 먼저 확인 (디버깅용)
-          if (rawMessage.msg === 'dAck') {
-            console.log(`🔔 dAck 메시지 수신: ${topic}`, {
-              msg: rawMessage.msg,
-              mac: rawMessage.mac,
-              seq: rawMessage.seq,
-              expectedSeq: seq,
-              expectedMac: command.mac,
-              rslt: rawMessage.rslt,
-              cause: rawMessage.cause,
-              gmac: rawMessage.gmac
-            });
+          if (rawMessage.msg !== 'dAck' || rawMessage.seq !== seq || rawMessage.mac !== command.mac) return;
+
+          clearTimeout(timeout);
+          mqttClient?.removeListener('message', responseHandler);
+          pendingCommands.delete(commandKey);
+
+          if (rawMessage.rslt === 'succ') {
+            console.log(`✅ 알람 명령 전송 성공: ${beaconId} (${targetGateway.gatewayId})`);
+            resolve(true);
+          } else {
+            resolve(false);
           }
-          
-          // 해당 시퀀스 번호의 dAck 응답인지 확인
-          if (rawMessage.msg === 'dAck' && rawMessage.seq === seq && rawMessage.mac === command.mac) {
-            console.log(`📥 Gateway dAck 응답 수신 (매칭됨): ${topic}`, {
-              mac: rawMessage.mac,
-              seq: rawMessage.seq,
-              rslt: rawMessage.rslt,
-              cause: rawMessage.cause,
-              gmac: rawMessage.gmac
-            });
-            
-            clearTimeout(timeout);
-            mqttClient?.removeListener('message', responseHandler);
-            pendingCommands.delete(commandKey);
-            
-            // rslt가 'succ'이면 성공으로 처리 (cause 값과 무관)
-            if (rawMessage.rslt === 'succ') {
-              console.log(`✅ 비콘 명령 성공: ${beaconId} (${rawMessage.mac}) - cause: ${rawMessage.cause}`);
-              resolve(true);
-            } else {
-              console.log(`❌ 비콘 명령 실패: ${beaconId} (${rawMessage.mac}) - rslt: ${rawMessage.rslt}, cause: ${rawMessage.cause}`);
-              resolve(false);
-            }
-          }
-        } catch (error) {
-          console.error('dAck 응답 파싱 오류:', error);
-        }
+        } catch (_) {}
       };
 
       // 응답 리스너 등록
@@ -165,13 +137,10 @@ export async function sendBeaconCommand(beaconId: string, command: any, gatewayI
       
       mqttClient?.publish(subactionTopic, JSON.stringify(gatewayMessage), { qos: 1 }, (error) => {
         if (error) {
-          console.error(`❌ 비콘 명령 전송 실패: ${beaconId}`, error);
           clearTimeout(timeout);
           mqttClient?.removeListener('message', responseHandler);
           pendingCommands.delete(commandKey);
           resolve(false);
-        } else {
-          console.log(`✅ 비콘 명령 전송 성공: ${beaconId} → ${targetGateway.gatewayId}`);
         }
       });
     });
@@ -288,26 +257,6 @@ export function initializeMQTTClient(): Promise<boolean> {
       });
 
 mqttClient.on('message', (topic, message) => {
-  // MQTT에서 들어오는 모든 메시지 상세 로그 출력
-  try {
-    const messageString = message.toString();
-    const messageLength = message.length;
-  
-    // JSON 파싱 시도
-    try {
-      const parsedMessage = JSON.parse(messageString);
-      
-    } catch (parseError) {
-      console.log('⚠️ JSON 파싱 실패 (메시지가 JSON 형식이 아닐 수 있음):', parseError);
-      console.log('원본 메시지 (hex):', message.toString('hex').substring(0, 100));
-    }
-    
-    console.log('='.repeat(80));
-  } catch (error) {
-    console.error('❌ MQTT 메시지 로그 출력 중 오류:', error);
-  }
-  
-  // 기존 메시지 처리 함수 호출
   handleBeaconMessage(topic, message);
 });
 
@@ -389,53 +338,16 @@ async function handleBeaconMessage(topic: string, message: Buffer) {
   try {
     const rawMessage = JSON.parse(message.toString());
     
-    // Gateway alive 메시지인지 확인
-    if (rawMessage.msg === 'alive') {
-      console.log(`💓 Gateway alive: ${rawMessage.gmac} (${rawMessage.ver}, ${rawMessage.temp}°C)`);
-      return; // alive 메시지는 처리하지 않고 종료
-    }
+    if (rawMessage.msg === 'alive') return;
 
-    // 비콘 명령 메시지인지 확인 (subaction 토픽)
+    // 비콘 명령 메시지인지 확인 (subaction 토픽) - dAck는 sendBeaconCommand에서만 처리
     if (topic.includes('/subaction') && (rawMessage.msg === 'dData' || rawMessage.msg === 'cfg')) {
- 
-      console.log(`🔍 Gateway가 명령을 받았습니다. 응답을 기다리는 중...`);
-      return; // 명령 메시지는 처리하지 않고 종료
+      return;
     }
 
-    // Gateway 응답 메시지인지 확인 (dAck 메시지)
-    if (rawMessage.msg === 'dAck') {
-      console.log(`📥 Gateway dAck 응답 수신: ${topic}`, {
-        mac: rawMessage.mac,
-        seq: rawMessage.seq,
-        rslt: rawMessage.rslt,
-        cause: rawMessage.cause,
-        gmac: rawMessage.gmac
-      });
-      
-      // dAck 응답은 sendBeaconCommand에서 Promise로 처리되므로 여기서는 로그만 출력
-      if (rawMessage.rslt === 'succ' && rawMessage.cause === 0) {
-        console.log(`✅ 비콘 명령 성공: ${rawMessage.mac}`);
-      } else {
-        console.log(`❌ 비콘 명령 실패: ${rawMessage.mac} - cause: ${rawMessage.cause}`);
-      }
-      return; // 응답 메시지는 처리하지 않고 종료
-    }
-
-    // Gateway 응답 메시지인지 확인 (비콘 명령 응답)
-    if (topic.includes('/response') && rawMessage.ack !== undefined) {
-      console.log(`📥 Gateway 응답 수신: ${topic}`, {
-        targetBeacon: rawMessage.targetBeacon,
-        command: rawMessage.command,
-        ack: rawMessage.ack,
-        message: rawMessage.message
-      });
-      
-      if (rawMessage.ack === 0) {
-        console.log(`✅ 비콘 명령 성공: ${rawMessage.targetBeacon}`);
-      } else {
-        console.log(`❌ 비콘 명령 실패: ${rawMessage.targetBeacon} - ${rawMessage.message}`);
-      }
-      return; // 응답 메시지는 처리하지 않고 종료
+    // dAck / response 메시지는 sendBeaconCommand 내부에서만 처리 (여기서는 로그 생략)
+    if (rawMessage.msg === 'dAck' || (topic.includes('/response') && rawMessage.ack !== undefined)) {
+      return;
     }
     
     // Gateway 메시지 형식인지 확인
@@ -475,14 +387,15 @@ async function handleGatewayMessage(topic: string, gatewayMessage: GatewayMessag
     const macNoColon = macRaw;
     const macWithColons = macRaw.match(/.{2}/g)?.join(':') || macRaw;
 
-    // Gateway MAC 주소로 실제 Gateway ID 찾기
-    let gatewayId = `GW_${gatewayMessage.gmac}`; // 기본값
+    // Gateway MAC 주소로 실제 Gateway ID 찾기 (gmac 정규화: 콜론 제거, 대문자)
+    const gmacNormalized = (gatewayMessage.gmac || '').replace(/:/g, '').trim().toUpperCase();
+    let gatewayId = gmacNormalized ? `GW_${gmacNormalized}` : '';
     try {
       const gateway = await prisma.gateway.findFirst({
         where: {
           OR: [
-            { gatewayId: { contains: gatewayMessage.gmac } },
-            { mqttTopic: { contains: gatewayMessage.gmac } }
+            { gatewayId: { contains: gmacNormalized } },
+            { mqttTopic: { contains: gmacNormalized } }
           ]
         },
         select: { gatewayId: true }
@@ -639,7 +552,7 @@ async function processBeaconMessage(messageData: BeaconMessage) {
 
     // 히스토리 상태 로그 제거됨 (스무딩 제거로 불필요)
     
-    // Gateway 설정 조회 (근접 경고 거리 및 자동 진동 설정)
+    // Gateway 설정 조회: 근접 알림 메뉴에서 설정한 "근접 경고 거리(m)" 및 "자동 진동" 사용
     const gatewaySettings = await prisma.gateway.findUnique({
       where: { gatewayId: messageData.gatewayId },
       select: {
@@ -649,15 +562,16 @@ async function processBeaconMessage(messageData: BeaconMessage) {
       }
     });
     
-    const proximityThreshold = gatewaySettings?.proximityThreshold || 5.0;
+    // 근접 알림 메뉴에서 설정한 값(Gateway.proximityThreshold) 사용, 미설정 시에만 기본 5.0
+    const proximityThreshold = gatewaySettings?.proximityThreshold ?? 5.0;
     
-    // 근접 알림 여부 판단
+    // 근접 알림 여부 판단 (설정한 임계값 이하이면 알림)
     const isAlert = shouldAlert(smoothedDistance, proximityThreshold);
     const dangerLevel = getDangerLevel(smoothedDistance);
     
-    // 알림 발생 시에만 로그 출력
+    // 근접 시에만 간단 로그
     if (isAlert) {
-      console.log(`🚨 근접 알림: ${beacon.name} - 거리=${smoothedDistance.toFixed(2)}m, 임계값=${proximityThreshold}m, 위험도=${dangerLevel}`);
+      console.log(`🚨 근접: ${messageData.beaconId} (${messageData.gatewayId}) 거리 ${smoothedDistance.toFixed(2)}m`);
     }
 
     // ProximityAlert 데이터 생성
@@ -738,9 +652,7 @@ async function handleProximityAlert(alertData: ProximityAlertData) {
           }),
         });
 
-        if (response.ok) {
-          console.log(`자동 진동 알림 전송: ${alertData.beaconId} (${gatewayConfig.name}, ${alertData.distance.toFixed(2)}m, 임계값=${alertData.threshold}m)`);
-        } else {
+        if (!response.ok) {
           console.error(`자동 진동 알림 전송 실패: ${alertData.beaconId}`);
         }
       } catch (error) {
@@ -912,9 +824,8 @@ export function getLatestRSSI(beaconId: string, gatewayId: string): number | nul
       } else {
         console.log(`⏰ RSSI 데이터 만료: ${beaconId}_${gatewayId} (${timeDiff}ms 전)`);
       }
-    } else {
-      console.log(`❌ RSSI 데이터 없음: ${beaconId}_${gatewayId}`);
     }
+    // RSSI 데이터 없음 로그 비활성화 (로그 과다 출력 방지)
     
     return null;
     

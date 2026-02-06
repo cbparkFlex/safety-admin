@@ -90,8 +90,8 @@ export async function GET(request: NextRequest) {
           };
         }
 
-        // Gateway별 근접 경고 거리 가져오기
-        const proximityThreshold = gateway.proximityThreshold || 5.0;
+        // 근접 알림 메뉴에서 설정한 Gateway별 근접 경고 거리 사용
+        const proximityThreshold = gateway.proximityThreshold ?? 5.0;
         
         // 위험도 판단
         const dangerLevel = getDangerLevel(currentDistance || 999);
@@ -152,11 +152,11 @@ export async function GET(request: NextRequest) {
 
     console.log(`✅ Gateway별 Beacon 상태 조회 완료: ${gatewayStatuses.length}개 Gateway`);
 
-    return NextResponse.json({
-      message: "Gateway별 Beacon 상태 조회 완료",
-      data: gatewayStatuses,
-      timestamp: new Date().toISOString()
-    });
+    // return NextResponse.json({
+    //   message: "Gateway별 Beacon 상태 조회 완료",
+    //   data: gatewayStatuses,
+    //   timestamp: new Date().toISOString()
+    // });
 
   } catch (error) {
     console.error("Gateway별 Beacon 상태 조회 실패:", error);

@@ -1,8 +1,10 @@
 import { Scheduler } from './scheduler';
 import { cleanupMemory } from './mqttClient';
+import { rssiCalibration } from './rssiCalibration';
 
 let isInitialized = false;
 let memoryCleanupInterval: NodeJS.Timeout | null = null;
+let calibrationReloadInterval: NodeJS.Timeout | null = null;
 
 export function initializeScheduler(): void {
   if (isInitialized) {
@@ -24,11 +26,31 @@ export function initializeScheduler(): void {
     // 메모리 정리 스케줄러 시작 (5분마다)
     startMemoryCleanupScheduler();
     
+    // RSSI 보정 데이터 주기 재로드 (1분마다) - UI에서 추가한 보정값이 MQTT 근접 판단에 반영되도록
+    startCalibrationReloadScheduler();
+    
     isInitialized = true;
     console.log('✅ 스케줄러 초기화 완료');
   } catch (error) {
     console.error('❌ 스케줄러 초기화 실패:', error);
   }
+}
+
+/**
+ * RSSI 보정 데이터 주기 재로드 (Gateway 관리에서 추가한 보정값이 진동 알람에 반영되도록)
+ */
+function startCalibrationReloadScheduler(): void {
+  if (calibrationReloadInterval) {
+    clearInterval(calibrationReloadInterval);
+  }
+  calibrationReloadInterval = setInterval(() => {
+    try {
+      rssiCalibration.loadCalibrationDataFromDatabase(true); // silent: 주기 재로드 시 로그 생략
+    } catch (error) {
+      console.error('❌ RSSI 보정 데이터 재로드 실패:', error);
+    }
+  }, 60 * 1000); // 1분마다
+  console.log('📐 RSSI 보정 데이터 재로드 스케줄러 시작 (1분마다)');
 }
 
 /**
@@ -59,6 +81,11 @@ export function stopMemoryCleanupScheduler(): void {
     clearInterval(memoryCleanupInterval);
     memoryCleanupInterval = null;
     console.log('🧹 메모리 정리 스케줄러 중지');
+  }
+  if (calibrationReloadInterval) {
+    clearInterval(calibrationReloadInterval);
+    calibrationReloadInterval = null;
+    console.log('📐 RSSI 보정 데이터 재로드 스케줄러 중지');
   }
 }
 
