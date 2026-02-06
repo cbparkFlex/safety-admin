@@ -16,7 +16,7 @@ const pendingCommands = new Map<string, { timestamp: number; promise: Promise<bo
 const COMMAND_DEDUP_WINDOW = 5000; // 5초 내 중복 명령 무시
 
 // MQTT 클라이언트 설정
-const MQTT_BROKER_URL = process.env.MQTT_BROKER_URL || 'mqtt://192.168.31.88:1883';
+const MQTT_BROKER_URL = process.env.MQTT_BROKER_URL || 'mqtt://192.168.31.107:1883';
 const MQTT_USERNAME = process.env.MQTT_USERNAME || '';
 const MQTT_PASSWORD = process.env.MQTT_PASSWORD || '';
 
@@ -452,22 +452,31 @@ async function handleBeaconMessage(topic: string, message: Buffer) {
   }
 }
 
+/**
+ * MQTT advData 메시지 처리 (BLE별 구분)
+ * 수신 형식: { msg: "advData", gmac: "게이트웨이MAC", obj: [ { type, dmac, uuid, majorID, minorID, refpower, rssi, time }, ... ] }
+ * - 각 obj 항목은 하나의 BLE 비콘 (dmac으로 구분)
+ * - 동일 메시지 내 여러 비콘은 각각 DB beacon 조회 후 beaconId+gatewayId 기준으로 처리
+ */
 async function handleGatewayMessage(topic: string, gatewayMessage: GatewayMessage) {
-  // Gateway 메시지 처리 로그 간소화 (10초마다만 출력)
   const now = Date.now();
   if (!(handleGatewayMessage as any).lastLogTime || now - (handleGatewayMessage as any).lastLogTime > 10000) {
     console.log(`📡 Gateway 처리: ${gatewayMessage.obj.length}개 Beacon`);
     (handleGatewayMessage as any).lastLogTime = now;
   }
-  
+
   for (const beaconData of gatewayMessage.obj) {
-    // MAC 주소로 Beacon을 찾아서 올바른 beaconId 사용
-    const macAddress = beaconData.dmac.toUpperCase();
-    
+    // BLE별 구분: 각 obj 항목은 dmac(비콘 MAC)으로 고유 식별
+    const macRaw = (beaconData.dmac || '').replace(/:/g, '').trim().toUpperCase();
+    if (!macRaw || macRaw.length < 12) {
+      continue; // 유효하지 않은 MAC 스킵
+    }
+    // DB 저장 형식이 콜론 있음/없음 둘 다 올 수 있으므로 둘 다로 조회
+    const macNoColon = macRaw;
+    const macWithColons = macRaw.match(/.{2}/g)?.join(':') || macRaw;
+
     // Gateway MAC 주소로 실제 Gateway ID 찾기
     let gatewayId = `GW_${gatewayMessage.gmac}`; // 기본값
-    
-    // Gateway MAC 주소를 통해 실제 Gateway ID 조회
     try {
       const gateway = await prisma.gateway.findFirst({
         where: {
@@ -478,17 +487,21 @@ async function handleGatewayMessage(topic: string, gatewayMessage: GatewayMessag
         },
         select: { gatewayId: true }
       });
-      
       if (gateway) {
         gatewayId = gateway.gatewayId;
       }
     } catch (error) {
       console.error(`Gateway ID 조회 실패 (${gatewayMessage.gmac}):`, error);
     }
-    
-    // MAC 주소로 Beacon 조회
+
+    // MAC 주소로 Beacon 조회 (콜론 유무 관계없이 매칭)
     const beacon = await prisma.beacon.findFirst({
-      where: { macAddress: macAddress }
+      where: {
+        OR: [
+          { macAddress: macNoColon },
+          { macAddress: macWithColons }
+        ]
+      }
     });
     
     if (!beacon) {

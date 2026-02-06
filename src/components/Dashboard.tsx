@@ -1330,7 +1330,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-4 gap-6">
+      <div className="grid gap-6">
         <div className="col-span-3 gap-6 space-y-4">
           {/* 상단 카드들 - 1:1:1:2 비율 */}
           
@@ -1490,310 +1490,11 @@ export default function Dashboard() {
             </div>
           </div>
 
-
-
-          {/* 가스 누출 감지 센서 - 전체 너비 */}
-          <div className="bg-white rounded-lg p-6 shadow-sm">
-            <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">가스 누출 감지 센서 현황</h3>
-                <div className="flex items-center space-x-4">
-                  {/* 범례 */}
-                  <div className="flex items-center space-x-4">
-                      <div className="flex items-center space-x-2">
-                          <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                          <span className="text-sm text-gray-600">안전</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                          <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                          <span className="text-sm text-gray-600">주의</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                          <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                          <span className="text-sm text-gray-600">위험</span>
-                      </div>
-                  </div>
-                  {/* 새로고침 버튼 */}
-                  <button
-                    onClick={() => {
-                      fetchGasSensors();
-                      fetchEmergencyRecords();
-                    }}
-                    className="flex items-center space-x-2 px-3 py-1.5 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-sm"
-                    title="가스 센서 데이터 새로고침"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    <span>새로고침</span>
-                  </button>
-                  {/* 확인 버튼 (선택된 센서 상태 저장) */}
-                  <button
-                    onClick={handleSaveSensorStatuses}
-                    disabled={Object.keys(sensorStatusSelections).length === 0}
-                    className={`flex items-center space-x-2 px-3 py-1.5 rounded-md transition-colors text-sm ${
-                      Object.keys(sensorStatusSelections).length === 0
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-green-500 text-white hover:bg-green-600'
-                    }`}
-                    title="선택된 센서 상태를 DB에 저장"
-                  >
-                    <span>확인</span>
-                  </button>
-                </div>
-            </div>
-            <div className="relative">
-              {/* 배경 이미지 */}
-              <div className="w-full h-[603px] bg-gray-100 rounded-lg flex items-center justify-center">
-                {/* <img src="/images/drawing/wrapper.png" alt="건물 평면도" className="w-full h-full object-contain" /> */}
-              </div>
-              
-              {/* B동 센서들 - 12개 배치 */}
-              <div className="absolute inset-0">
-                {/* B동 센서들 - 12개 배치 */}
-                <div className="absolute top-[1%] left-[22%] w-[17%] h-[98%] border-2 border-gray-300 rounded-lg">
-                  {gasSensors.filter(sensor => sensor.building === 'B').map((sensor) => {
-                    // 실시간 데이터가 있으면 사용, 없으면 기본값 (level 정규화)
-                    const rawLevel = sensor.realtime?.level || 'COMMON';
-                    const currentStatus = normalizeLevel(rawLevel);
-                    const currentValue = sensor.realtime?.value || 0;
-                    const lastUpdate = sensor.realtime?.lastUpdate;
-                    
-                    const getStatusColor = (level: string) => {
-                      switch (level) {
-                        case 'CRITICAL':
-                          return 'bg-red-100 border-red-300 text-red-800';
-                        case 'DANGER':
-                          return 'bg-red-100 border-red-300 text-red-800';
-                        case 'WARN':
-                          return 'bg-yellow-100 border-yellow-300 text-yellow-800';
-                        case 'COMMON':
-                        default:
-                          return 'bg-green-100 border-green-300 text-green-800';
-                      }
-                    };
-
-                    const sensorKey = `${sensor.building}_${sensor.name}`;
-                    const selectedStatus = sensorStatusSelections[sensorKey] || '';
-                    
-                    // 선택된 상태가 있으면 그 상태를 우선 표시, 없으면 DB 데이터 사용
-                    let displayStatus = currentStatus;
-                    let displayValue = currentValue;
-                    let displayText = getStatusText(currentStatus);
-                    
-                    if (selectedStatus) {
-                      // 선택된 상태에 따라 표시할 값 설정
-                      switch (selectedStatus) {
-                        case 'normal':
-                          displayStatus = 'COMMON';
-                          displayValue = Math.floor(Math.random() * 200); // 0-200
-                          displayText = '정상';
-                          break;
-                        case 'warning':
-                          displayStatus = 'WARN';
-                          displayValue = Math.floor(Math.random() * 800) + 200; // 200-1000
-                          displayText = '주의';
-                          break;
-                        case 'danger':
-                          displayStatus = 'DANGER';
-                          displayValue = Math.floor(Math.random() * 4000) + 1000; // 1000-5000
-                          displayText = '경고';
-                          break;
-                        case 'critical':
-                          displayStatus = 'CRITICAL';
-                          displayValue = Math.floor(Math.random() * 5000) + 5000; // 5000-10000
-                          displayText = '위험';
-                          break;
-                      }
-                    }
-
-                    return (
-                      <div
-                        key={sensor.id}
-                        className="absolute"
-                        style={{
-                          top: sensor.position.top,
-                          ...(sensor.position.left ? { left: sensor.position.left } : { right: sensor.position.right })
-                        }}
-                      >
-                        <div className="flex flex-col items-center space-y-1">
-                          <div 
-                            className={`border rounded p-2 text-center w-16 h-16 flex flex-col justify-center cursor-pointer hover:scale-105 transition-transform ${getStatusColor(displayStatus)}`}
-                            onClick={() => handleSensorClick(sensor)}
-                            title={`${sensor.building}동 ${sensor.name}번 센서 - 클릭하여 상세 데이터 보기`}
-                          >
-                            <div className="text-xs font-medium">{sensor.name}</div>
-                            <div className="text-xs">{displayText}</div>
-                            <div className="text-xs">{displayValue}ppm</div>
-                          </div>
-                          <select
-                            value={selectedStatus}
-                            onChange={(e) => handleSensorStatusChange(sensorKey, e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-20 text-xs border border-gray-300 rounded px-1 py-0.5 bg-white"
-                            title="센서 상태 선택"
-                          >
-                            <option value="normal">정상</option>
-                            <option value="warning">주의</option>
-                            <option value="danger">경고</option>
-                            <option value="critical">위험</option>
-                          </select>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* A동 센서들 - 11개 배치 */}
-                {/* A동 라인 */}
-                <div className="absolute top-[1%] right-[22%] w-[17%] h-[98%] border-2 border-gray-500 rounded-lg rotate-53">
-                </div>
-
-                <div>
-                {gasSensors.filter(sensor => sensor.building === 'A').map((sensor) => {
-                    // 실시간 데이터가 있으면 사용, 없으면 기본값 (level 정규화)
-                    const rawLevel = sensor.realtime?.level || 'COMMON';
-                    const currentStatus = normalizeLevel(rawLevel);
-                    const currentValue = sensor.realtime?.value || 0;
-                    const lastUpdate = sensor.realtime?.lastUpdate;
-                    
-                    // A동 1~3번 센서인지 확인
-                    const sensorNumber = parseInt(sensor.name) || 0;
-                    const isExcludedSensor = sensorNumber >= 1 && sensorNumber <= 3;
-                    
-                    const getStatusColor = (level: string) => {
-                      switch (level) {
-                        case 'CRITICAL':
-                          return 'bg-red-100 border-red-300 text-red-800';
-                        case 'DANGER':
-                          return 'bg-red-100 border-red-300 text-red-800';
-                        case 'WARN':
-                          return 'bg-yellow-100 border-yellow-300 text-yellow-800';
-                        case 'COMMON':
-                        default:
-                          return 'bg-green-100 border-green-300 text-green-800';
-                      }
-                    };
-
-                    const sensorKey = `${sensor.building}_${sensor.name}`;
-                    const selectedStatus = sensorStatusSelections[sensorKey] || '';
-                    
-                    // 선택된 상태가 있으면 그 상태를 우선 표시, 없으면 DB 데이터 사용
-                    let displayStatus = currentStatus;
-                    let displayValue = currentValue;
-                    let displayText = getStatusText(currentStatus);
-                    
-                    if (selectedStatus) {
-                      // 선택된 상태에 따라 표시할 값 설정
-                      switch (selectedStatus) {
-                        case 'normal':
-                          displayStatus = 'COMMON';
-                          displayValue = Math.floor(Math.random() * 200); // 0-200
-                          displayText = '정상';
-                          break;
-                        case 'warning':
-                          displayStatus = 'WARN';
-                          displayValue = Math.floor(Math.random() * 800) + 200; // 200-1000
-                          displayText = '주의';
-                          break;
-                        case 'danger':
-                          displayStatus = 'DANGER';
-                          displayValue = Math.floor(Math.random() * 4000) + 1000; // 1000-5000
-                          displayText = '경고';
-                          break;
-                        case 'critical':
-                          displayStatus = 'CRITICAL';
-                          displayValue = Math.floor(Math.random() * 5000) + 5000; // 5000-10000
-                          displayText = '위험';
-                          break;
-                      }
-                    }
-                    
-                    // 실제 저장된 상태에 따라 색상 표시 (특수 처리 로직 제거)
-                    const finalStatusColor = getStatusColor(displayStatus);
-
-                    return (
-                      <div
-                        key={sensor.id}
-                        className="absolute"
-                        style={{
-                          top: sensor.position.top,
-                          ...(sensor.position.left ? { left: sensor.position.left } : { right: sensor.position.right })
-                        }}
-                      >
-                        <div className="flex flex-col items-center space-y-1">
-                          <div 
-                            className={`border rounded p-2 text-center w-16 h-16 flex flex-col justify-center cursor-pointer hover:scale-105 transition-transform ${finalStatusColor}`}
-                            onClick={() => handleSensorClick(sensor)}
-                            title={`${sensor.building}동 ${sensor.name}번 센서 - 클릭하여 상세 데이터 보기`}
-                          >
-                            <div className="text-xs font-medium">{sensor.name}</div>
-                            <div className="text-xs">{displayText}</div>
-                            <div className="text-xs">{displayValue}ppm</div>
-                          </div>
-                          <select
-                            value={selectedStatus}
-                            onChange={(e) => handleSensorStatusChange(sensorKey, e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-20 text-xs border border-gray-300 rounded px-1 py-0.5 bg-white"
-                            title="센서 상태 선택"
-                          >
-                            <option value="normal">정상</option>
-                            <option value="warning">주의</option>
-                            <option value="danger">경고</option>
-                            <option value="critical">위험</option>
-                          </select>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-
-                {/* 사무동 */}
-                <div className="absolute bottom-[1%] left-[39.1%]">
-                  <div className="bg-gray-100 border border-gray-300 rounded p-4 w-24 h-36 flex items-center justify-center">
-                    <span className="text-gray-500 text-xs">사무실</span>
-                  </div>
-                </div>
-
-                {/* LPG 저장소 */}
-                <div className="absolute top-[7%] right-[43%]">
-                  <div className="bg-orange-100 border border-orange-300 rounded p-4 w-24 h-16 flex items-center justify-center">
-                    <span className="text-orange-700 text-xs">LPG 저장소</span>
-                  </div>
-                </div>
-
-                {/* 카메라 1번*/}
-                <div className="absolute top-[10%] right-[37%]">
-                  <div className="p-4 w-24 h-16 flex items-center justify-center">
-                    <img src="/images/cctv.svg" alt="cctv_1" className="w-full h-full object-contain" />
-                    
-                  </div>
-                </div>
-                
-                
-                {/* 카메라 2번*/}
-                <div className="absolute top-[67%] right-[54%]">
-                  <div className="p-4 w-24 h-16 flex items-center justify-center">
-                    <img src="/images/cctv.svg" alt="cctv_2" className="w-full h-full object-contain" />
-                  </div>
-                </div>
-
-                
-                {/* 카메라 3번*/}
-                <div className="absolute top-[90%] right-[38%]">
-                  <div className="p-4 w-24 h-16 flex items-center justify-center">
-                    <img src="/images/cctv.svg" alt="cctv_3" className="w-full h-full object-contain" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-col h-full">
+          <div className="flex flex-col">
           {/* 실시간 CCTV */}
           <h3 className="text-lg font-semibold text-gray-900 mb-4">실시간 CCTV</h3>
           <div className="lg:col-span-2 bg-white rounded-lg p-6 shadow-sm flex-1">
-            <div className="grid grid-cols-1 gap-4 h-full">
+            <div className="grid grid-cols-3 gap-4 h-full">
               {/* A동 출입구 - RTSP 스트림 */}
               <div className="relative">
                 <div className="bg-gray-900 rounded-lg h-[260px] flex items-center justify-center relative overflow-hidden">
@@ -2052,6 +1753,304 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+
+          {/* 가스 누출 감지 센서 - 전체 너비 */}
+          <div className="bg-white rounded-lg p-6 shadow-sm">
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">가스 누출 감지 센서 현황</h3>
+            </div>
+            <div className="relative">
+              {/* 배경 이미지 */}
+              <div className="w-full h-[603px] bg-gray-100 rounded-lg flex items-center justify-center">
+                {/* <img src="/images/drawing/wrapper.png" alt="건물 평면도" className="w-full h-full object-contain" /> */}
+              </div>
+              
+              {/* B동 센서들 - 12개 배치 */}
+              <div className="absolute inset-0">
+                {/* B동 센서들 - 12개 배치 */}
+                <div className="absolute top-[1%] left-[22%] w-[17%] h-[98%] border-2 border-gray-300 rounded-lg">
+                  {gasSensors.filter(sensor => sensor.building === 'B').map((sensor) => {
+                    // 실시간 데이터가 있으면 사용, 없으면 기본값 (level 정규화)
+                    const rawLevel = sensor.realtime?.level || 'COMMON';
+                    const currentStatus = normalizeLevel(rawLevel);
+                    const currentValue = sensor.realtime?.value || 0;
+                    const lastUpdate = sensor.realtime?.lastUpdate;
+                    
+                    const getStatusColor = (level: string) => {
+                      switch (level) {
+                        case 'CRITICAL':
+                          return 'bg-red-100 border-red-300 text-red-800';
+                        case 'DANGER':
+                          return 'bg-red-100 border-red-300 text-red-800';
+                        case 'WARN':
+                          return 'bg-yellow-100 border-yellow-300 text-yellow-800';
+                        case 'COMMON':
+                        default:
+                          return 'bg-green-100 border-green-300 text-green-800';
+                      }
+                    };
+
+                    const sensorKey = `${sensor.building}_${sensor.name}`;
+                    const selectedStatus = sensorStatusSelections[sensorKey] || '';
+                    
+                    // 선택된 상태가 있으면 그 상태를 우선 표시, 없으면 DB 데이터 사용
+                    let displayStatus = currentStatus;
+                    let displayValue = currentValue;
+                    let displayText = getStatusText(currentStatus);
+                    
+                    if (selectedStatus) {
+                      // 선택된 상태에 따라 표시할 값 설정
+                      switch (selectedStatus) {
+                        case 'normal':
+                          displayStatus = 'COMMON';
+                          displayValue = Math.floor(Math.random() * 200); // 0-200
+                          displayText = '정상';
+                          break;
+                        case 'warning':
+                          displayStatus = 'WARN';
+                          displayValue = Math.floor(Math.random() * 800) + 200; // 200-1000
+                          displayText = '주의';
+                          break;
+                        case 'danger':
+                          displayStatus = 'DANGER';
+                          displayValue = Math.floor(Math.random() * 4000) + 1000; // 1000-5000
+                          displayText = '경고';
+                          break;
+                        case 'critical':
+                          displayStatus = 'CRITICAL';
+                          displayValue = Math.floor(Math.random() * 5000) + 5000; // 5000-10000
+                          displayText = '위험';
+                          break;
+                      }
+                    }
+
+                    return (
+                      <div
+                        key={sensor.id}
+                        className="absolute"
+                        style={{
+                          top: sensor.position.top,
+                          ...(sensor.position.left ? { left: sensor.position.left } : { right: sensor.position.right })
+                        }}
+                      >
+                        <div className="flex flex-col items-center space-y-1">
+                          <div 
+                            className={`border rounded p-2 text-center w-16 h-16 flex flex-col justify-center cursor-pointer hover:scale-105 transition-transform ${getStatusColor(displayStatus)}`}
+                            onClick={() => handleSensorClick(sensor)}
+                            title={`${sensor.building}동 ${sensor.name}번 센서 - 클릭하여 상세 데이터 보기`}
+                          >
+                            <div className="text-xs font-medium">{sensor.name}</div>
+                            <div className="text-xs">{displayText}</div>
+                            <div className="text-xs">{displayValue}ppm</div>
+                          </div>
+                          <select
+                            value={selectedStatus}
+                            onChange={(e) => handleSensorStatusChange(sensorKey, e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-20 text-xs border border-gray-300 rounded px-1 py-0.5 bg-white"
+                            title="센서 상태 선택"
+                          >
+                            <option value="normal">정상</option>
+                            <option value="warning">주의</option>
+                            <option value="danger">경고</option>
+                            <option value="critical">위험</option>
+                          </select>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* A동 센서들 - 11개 배치 */}
+                {/* A동 라인 */}
+                <div className="absolute top-[1%] right-[22%] w-[17%] h-[98%] border-2 border-gray-500 rounded-lg rotate-53">
+                </div>
+
+                <div>
+                {gasSensors.filter(sensor => sensor.building === 'A').map((sensor) => {
+                    // 실시간 데이터가 있으면 사용, 없으면 기본값 (level 정규화)
+                    const rawLevel = sensor.realtime?.level || 'COMMON';
+                    const currentStatus = normalizeLevel(rawLevel);
+                    const currentValue = sensor.realtime?.value || 0;
+                    const lastUpdate = sensor.realtime?.lastUpdate;
+                    
+                    // A동 1~3번 센서인지 확인
+                    const sensorNumber = parseInt(sensor.name) || 0;
+                    const isExcludedSensor = sensorNumber >= 1 && sensorNumber <= 3;
+                    
+                    const getStatusColor = (level: string) => {
+                      switch (level) {
+                        case 'CRITICAL':
+                          return 'bg-red-100 border-red-300 text-red-800';
+                        case 'DANGER':
+                          return 'bg-red-100 border-red-300 text-red-800';
+                        case 'WARN':
+                          return 'bg-yellow-100 border-yellow-300 text-yellow-800';
+                        case 'COMMON':
+                        default:
+                          return 'bg-green-100 border-green-300 text-green-800';
+                      }
+                    };
+
+                    const sensorKey = `${sensor.building}_${sensor.name}`;
+                    const selectedStatus = sensorStatusSelections[sensorKey] || '';
+                    
+                    // 선택된 상태가 있으면 그 상태를 우선 표시, 없으면 DB 데이터 사용
+                    let displayStatus = currentStatus;
+                    let displayValue = currentValue;
+                    let displayText = getStatusText(currentStatus);
+                    
+                    if (selectedStatus) {
+                      // 선택된 상태에 따라 표시할 값 설정
+                      switch (selectedStatus) {
+                        case 'normal':
+                          displayStatus = 'COMMON';
+                          displayValue = Math.floor(Math.random() * 200); // 0-200
+                          displayText = '정상';
+                          break;
+                        case 'warning':
+                          displayStatus = 'WARN';
+                          displayValue = Math.floor(Math.random() * 800) + 200; // 200-1000
+                          displayText = '주의';
+                          break;
+                        case 'danger':
+                          displayStatus = 'DANGER';
+                          displayValue = Math.floor(Math.random() * 4000) + 1000; // 1000-5000
+                          displayText = '경고';
+                          break;
+                        case 'critical':
+                          displayStatus = 'CRITICAL';
+                          displayValue = Math.floor(Math.random() * 5000) + 5000; // 5000-10000
+                          displayText = '위험';
+                          break;
+                      }
+                    }
+                    
+                    // 실제 저장된 상태에 따라 색상 표시 (특수 처리 로직 제거)
+                    const finalStatusColor = getStatusColor(displayStatus);
+
+                    return (
+                      <div
+                        key={sensor.id}
+                        className="absolute"
+                        style={{
+                          top: sensor.position.top,
+                          ...(sensor.position.left ? { left: sensor.position.left } : { right: sensor.position.right })
+                        }}
+                      >
+                        <div className="flex flex-col items-center space-y-1">
+                          <div 
+                            className={`border rounded p-2 text-center w-16 h-16 flex flex-col justify-center cursor-pointer hover:scale-105 transition-transform ${finalStatusColor}`}
+                            onClick={() => handleSensorClick(sensor)}
+                            title={`${sensor.building}동 ${sensor.name}번 센서 - 클릭하여 상세 데이터 보기`}
+                          >
+                            <div className="text-xs font-medium">{sensor.name}</div>
+                            <div className="text-xs">{displayText}</div>
+                            <div className="text-xs">{displayValue}ppm</div>
+                          </div>
+                          <select
+                            value={selectedStatus}
+                            onChange={(e) => handleSensorStatusChange(sensorKey, e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-20 text-xs border border-gray-300 rounded px-1 py-0.5 bg-white"
+                            title="센서 상태 선택"
+                          >
+                            <option value="normal">정상</option>
+                            <option value="warning">주의</option>
+                            <option value="danger">경고</option>
+                            <option value="critical">위험</option>
+                          </select>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+
+                {/* 사무동 */}
+                <div className="absolute bottom-[1%] left-[39.1%]">
+                  <div className="bg-gray-100 border border-gray-300 rounded p-4 w-24 h-36 flex items-center justify-center">
+                    <span className="text-gray-500 text-xs">사무실</span>
+                  </div>
+                </div>
+
+                {/* LPG 저장소 */}
+                <div className="absolute top-[7%] right-[43%]">
+                  <div className="bg-orange-100 border border-orange-300 rounded p-4 w-24 h-16 flex items-center justify-center">
+                    <span className="text-orange-700 text-xs">LPG 저장소</span>
+                  </div>
+                </div>
+
+                {/* 카메라 1번*/}
+                <div className="absolute top-[10%] right-[37%]">
+                  <div className="p-4 w-24 h-16 flex items-center justify-center">
+                    <img src="/images/cctv.svg" alt="cctv_1" className="w-full h-full object-contain" />
+                    
+                  </div>
+                </div>
+                
+                
+                {/* 카메라 2번*/}
+                <div className="absolute top-[67%] right-[54%]">
+                  <div className="p-4 w-24 h-16 flex items-center justify-center">
+                    <img src="/images/cctv.svg" alt="cctv_2" className="w-full h-full object-contain" />
+                  </div>
+                </div>
+
+                
+                {/* 카메라 3번*/}
+                <div className="absolute top-[90%] right-[38%]">
+                  <div className="p-4 w-24 h-16 flex items-center justify-center">
+                    <img src="/images/cctv.svg" alt="cctv_3" className="w-full h-full object-contain" />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4">
+                  {/* 범례 */}
+                  <div className="flex items-center space-x-4">
+                      <div className="flex items-center space-x-2">
+                          <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                          <span className="text-sm text-gray-600">안전</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                          <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                          <span className="text-sm text-gray-600">주의</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                          <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                          <span className="text-sm text-gray-600">위험</span>
+                      </div>
+                  </div>
+                  {/* 새로고침 버튼 */}
+                  <button
+                    onClick={() => {
+                      fetchGasSensors();
+                      fetchEmergencyRecords();
+                    }}
+                    className="flex items-center space-x-2 px-3 py-1.5 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-sm"
+                    title="가스 센서 데이터 새로고침"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    <span>새로고침</span>
+                  </button>
+                  {/* 확인 버튼 (선택된 센서 상태 저장) */}
+                  <button
+                    onClick={handleSaveSensorStatuses}
+                    disabled={Object.keys(sensorStatusSelections).length === 0}
+                    className={`flex items-center space-x-2 px-3 py-1.5 rounded-md transition-colors text-sm ${
+                      Object.keys(sensorStatusSelections).length === 0
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-green-500 text-white hover:bg-green-600'
+                    }`}
+                    title="선택된 센서 상태를 DB에 저장"
+                  >
+                    <span>확인</span>
+                  </button>
+                </div>
+
           </div>
         </div>
       </div>
