@@ -1630,7 +1630,6 @@ export default function Dashboard() {
                             className="w-20 text-xs border border-gray-300 rounded px-1 py-0.5 bg-white"
                             title="센서 상태 선택"
                           >
-                            <option value="">선택</option>
                             <option value="normal">정상</option>
                             <option value="warning">주의</option>
                             <option value="danger">경고</option>
@@ -1736,7 +1735,6 @@ export default function Dashboard() {
                             className="w-20 text-xs border border-gray-300 rounded px-1 py-0.5 bg-white"
                             title="센서 상태 선택"
                           >
-                            <option value="">선택</option>
                             <option value="normal">정상</option>
                             <option value="warning">주의</option>
                             <option value="danger">경고</option>
@@ -2056,64 +2054,6 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* 출근 작업자 목록 - 좌우 스크롤 */}
-      <div className="bg-white rounded-lg p-6 shadow-sm border">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">출근 작업자 목록</h3>
-        
-        {loading ? (
-          <div className="flex items-center justify-center py-8">
-            <div className="text-gray-500">출근 작업자 정보를 불러오는 중...</div>
-          </div>
-        ) : error ? (
-          <div className="flex items-center justify-center py-8">
-            <div className="text-red-500">{error}</div>
-          </div>
-        ) : (
-          <div className="flex max-w-full">
-            <div className="flex overflow-x-auto gap-6">
-              {attendanceWorkers.map((worker) => (
-                <div key={worker.id} className="border border-gray-200 rounded-lg p-4 flex-shrink-0 bg-white shadow-sm">
-                  <div className="flex items-center space-x-3 mb-3">
-                    <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center">
-                      <Mountain className="w-6 h-6 text-gray-500" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900">{worker.name}</p>
-                      <p className="text-sm text-gray-600">{worker.workField}</p>
-                    </div>
-                  </div>
-                  <div className="space-y-2 text-sm text-gray-600">
-                    <div className="flex items-center space-x-2">
-                      <Clock className="w-4 h-4" />
-                      <span>출근 시간: {worker.checkInTime}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Wrench className="w-4 h-4" />
-                      <span>장비 번호: {worker.equipmentId?.replace('BEACON_', '') || worker.equipmentId}</span>
-                    </div>
-                    <div className="flex items-center justify-center pt-2">
-                      <button
-                        onClick={() => handleVibrate(worker.equipmentId, worker.name)}
-                        disabled={vibratingBeacons.has(worker.equipmentId)}
-                        className={`inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md transition-colors ${
-                          vibratingBeacons.has(worker.equipmentId)
-                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            : 'bg-blue-100 text-blue-700 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500'
-                        }`}
-                        title="비콘 진동 (1초)"
-                      >
-                        <Smartphone className="w-3 h-3 mr-1" />
-                        {vibratingBeacons.has(worker.equipmentId) ? '진동 중...' : '진동'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* 비상 상황 팝업 */}

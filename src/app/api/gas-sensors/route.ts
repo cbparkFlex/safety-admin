@@ -52,7 +52,7 @@ const GAS_SENSOR_POSITIONS = [
   
   // A동 (오른쪽) - 10개 (자동 생성)
   // 시작점: top 12%, right 17%, 간격: top 8%, right 5%
-  ...generateGasSensorPositions(12, 20, 9, 4.5)
+  ...generateGasSensorPositions(13, 16, 10, 5.5)
 ];
 
 // 가스 센서 상태 데이터 (메모리 저장)
