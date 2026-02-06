@@ -3,7 +3,14 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // 워크스페이스 루트 설정 (lockfile 경고 해결)
   outputFileTracingRoot: __dirname,
-  
+
+  // 개발 시 GET /api ... 로그 제거 (콘솔 노이즈 감소)
+  logging: {
+    incomingRequests: {
+      ignore: [/\/api\//],
+    },
+  },
+
   // 성능 최적화
   compress: true,
   

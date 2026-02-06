@@ -391,7 +391,7 @@ async function handleGatewayMessage(topic: string, gatewayMessage: GatewayMessag
     const gmacNormalized = (gatewayMessage.gmac || '').replace(/:/g, '').trim().toUpperCase();
     let gatewayId = gmacNormalized ? `GW_${gmacNormalized}` : '';
     try {
-      const gateway = await prisma.gateway.findFirst({
+      let gateway = await prisma.gateway.findFirst({
         where: {
           OR: [
             { gatewayId: { contains: gmacNormalized } },
@@ -400,6 +400,15 @@ async function handleGatewayMessage(topic: string, gatewayMessage: GatewayMessag
         },
         select: { gatewayId: true }
       });
+      // 접두사 매칭 폴백: gmac이 한두 글자 다를 때 (예: 4CA38FACA6B0 vs DB 4CA38FACA680) 매칭
+      if (!gateway && gmacNormalized.length >= 10) {
+        const all = await prisma.gateway.findMany({ where: { status: 'active' }, select: { gatewayId: true } });
+        const prefix = gmacNormalized.slice(0, 10);
+        gateway = all.find((g) => {
+          const suffix = g.gatewayId.replace(/^GW_/i, '');
+          return suffix.startsWith(prefix) || prefix.startsWith(suffix.slice(0, 10));
+        }) || null;
+      }
       if (gateway) {
         gatewayId = gateway.gatewayId;
       }
@@ -418,9 +427,27 @@ async function handleGatewayMessage(topic: string, gatewayMessage: GatewayMessag
     });
     
     if (!beacon) {
-      continue;
+      if (!(handleGatewayMessage as any).noBeaconLog) (handleGatewayMessage as any).noBeaconLog = new Set<string>();
+      const key = `${macRaw}`;
+      if (!(handleGatewayMessage as any).noBeaconLog.has(key)) {
+        (handleGatewayMessage as any).noBeaconLog.add(key);
+        console.warn(`⚠️ 비콘 미등록: dmac ${macWithColons || macRaw} — 근접 알림을 쓰려면 비콘 등록 필요`);
+      }
+      continue; // DB에 없는 비콘은 스킵 (등록 필요)
     }
-    
+
+    // Gateway 미매칭 시 해당 gatewayId로 DB에 없으면 processBeaconMessage에서 조기 반환됨 → 진동 불발 원인
+    if (!gatewayId || gatewayId === `GW_${gmacNormalized}`) {
+      const gwExists = await prisma.gateway.findUnique({ where: { gatewayId }, select: { gatewayId: true } }).then(() => true).catch(() => false);
+      if (!gwExists && gmacNormalized) {
+        if (!(handleGatewayMessage as any).noGwLog) (handleGatewayMessage as any).noGwLog = new Set<string>();
+        if (!(handleGatewayMessage as any).noGwLog.has(gmacNormalized)) {
+          (handleGatewayMessage as any).noGwLog.add(gmacNormalized);
+          console.warn(`⚠️ 게이트웨이 미매칭: gmac ${gmacNormalized} — 근접 알림 메뉴에 동일/유사 MAC으로 등록했는지 확인`);
+        }
+      }
+    }
+
     const messageData: BeaconMessage = {
       beaconId: beacon.beaconId, // 데이터베이스의 실제 beaconId 사용
       gatewayId: gatewayId,
@@ -476,7 +503,12 @@ async function processBeaconMessage(messageData: BeaconMessage) {
     });
 
     if (!gateway) {
-      // 등록되지 않은 Gateway는 데이터 저장하지 않고 조용히 무시
+      if (!(processBeaconMessage as any).noGwLog) (processBeaconMessage as any).noGwLog = new Set<string>();
+      const key = messageData.gatewayId;
+      if (!(processBeaconMessage as any).noGwLog.has(key)) {
+        (processBeaconMessage as any).noGwLog.add(key);
+        console.warn(`⚠️ Gateway 미등록: ${messageData.gatewayId} — 근접/진동 불발 원인. 근접 알림 메뉴에서 해당 게이트웨이 등록 여부 확인`);
+      }
       return;
     }
     
@@ -569,9 +601,11 @@ async function processBeaconMessage(messageData: BeaconMessage) {
     const isAlert = shouldAlert(smoothedDistance, proximityThreshold);
     const dangerLevel = getDangerLevel(smoothedDistance);
     
-    // 근접 시에만 간단 로그
     if (isAlert) {
       console.log(`🚨 근접: ${messageData.beaconId} (${messageData.gatewayId}) 거리 ${smoothedDistance.toFixed(2)}m`);
+    } else if (smoothedDistance <= proximityThreshold * 2) {
+      // 진동이 안 나는 이유: 거리 > 임계값 (임계값을 늘리거나 보정값 추가 시 진동 가능)
+      console.log(`📏 거리 ${smoothedDistance.toFixed(2)}m > 임계값 ${proximityThreshold}m → 진동 없음 (${messageData.beaconId}, ${messageData.gatewayId})`);
     }
 
     // ProximityAlert 데이터 생성

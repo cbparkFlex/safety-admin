@@ -152,12 +152,11 @@ export async function GET(request: NextRequest) {
 
     console.log(`✅ Gateway별 Beacon 상태 조회 완료: ${gatewayStatuses.length}개 Gateway`);
 
-    // return NextResponse.json({
-    //   message: "Gateway별 Beacon 상태 조회 완료",
-    //   data: gatewayStatuses,
-    //   timestamp: new Date().toISOString()
-    // });
-
+    return NextResponse.json({
+      message: "Gateway별 Beacon 상태 조회 완료",
+      data: gatewayStatuses,
+      timestamp: new Date().toISOString()
+    });
   } catch (error) {
     console.error("Gateway별 Beacon 상태 조회 실패:", error);
     return NextResponse.json(
