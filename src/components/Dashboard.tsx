@@ -1149,152 +1149,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* 테스트 버튼 (개발용) */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-semibold text-blue-800">🧪 비상 상황 테스트 도구</h3>
-          <button
-            onClick={() => setIsTestToolsExpanded(!isTestToolsExpanded)}
-            className="flex items-center space-x-2 px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
-          >
-            <span>{isTestToolsExpanded ? '접기' : '펼치기'}</span>
-            <span className={`transform transition-transform ${isTestToolsExpanded ? 'rotate-180' : ''}`}>
-              ▼
-            </span>
-          </button>
-        </div>
-        
-        {isTestToolsExpanded && (
-          <>
-            {/* 비상 상황별 테스트 버튼 */}
-            <div className="mb-4">
-              <h4 className="text-md font-medium text-blue-700 mb-2">비상 상황 SOP 테스트</h4>
-              <p className="text-xs text-gray-600 mb-3">각 버튼을 클릭하면 해당 비상 상황의 SOP 팝업이 실행됩니다.</p>
-              <div className="grid grid-cols-2 gap-3">
-                <button 
-                  onClick={() => handleEmergencyProtocol('lpg_gas_leak')}
-                  className="bg-red-600 text-white px-4 py-3 rounded-lg hover:bg-red-700 transition-colors text-sm flex flex-col items-center group relative"
-                  title="LPG 센서에서 가스 누출이 감지되었을 때의 대응 절차를 테스트합니다."
-                >
-                  <span className="font-semibold">🚨 LPG 가스 누출</span>
-                  <span className="text-xs opacity-90">5단계 SOP</span>
-                  <span className="text-xs opacity-75 mt-1">즉시 작업 중단 → 가스 차단 → 환기 → 신고 → 안전 확인</span>
-                </button>
-                <button 
-                  onClick={() => handleEmergencyProtocol('safety_equipment')}
-                  className="bg-orange-600 text-white px-4 py-3 rounded-lg hover:bg-orange-700 transition-colors text-sm flex flex-col items-center group relative"
-                  title="작업자가 안전장구를 착용하지 않은 상태로 감지되었을 때의 대응 절차를 테스트합니다."
-                >
-                  <span className="font-semibold">⚠️ 안전장구 미착용</span>
-                  <span className="text-xs opacity-90">4단계 SOP</span>
-                  <span className="text-xs opacity-75 mt-1">작업 중단 → 안전장구 착용 → 교육 → 작업 재개</span>
-                </button>
-                <button 
-                  onClick={() => handleEmergencyProtocol('crane_worker')}
-                  className="bg-yellow-600 text-white px-4 py-3 rounded-lg hover:bg-yellow-700 transition-colors text-sm flex flex-col items-center group relative"
-                  title="크레인 작업 반경 내에 작업자가 진입했을 때의 대응 절차를 테스트합니다."
-                >
-                  <span className="font-semibold">🏗️ 크레인 반경 침입</span>
-                  <span className="text-xs opacity-90">4단계 SOP</span>
-                  <span className="text-xs opacity-75 mt-1">크레인 중단 → 작업자 대피 → 안전 확인 → 작업 재개</span>
-                </button>
-                <button 
-                  onClick={() => handleEmergencyProtocol('lpg_explosion')}
-                  className="bg-red-800 text-white px-4 py-3 rounded-lg hover:bg-red-900 transition-colors text-sm flex flex-col items-center group relative"
-                  title="CCTV에서 LPG 저장소 주변에 폭발 위험이 감지되었을 때의 대응 절차를 테스트합니다."
-                >
-                  <span className="font-semibold">💥 LPG 폭발 위험</span>
-                  <span className="text-xs opacity-90">5단계 SOP</span>
-                  <span className="text-xs opacity-75 mt-1">전체 대피 → 긴급 신고 → 가스 차단 → 전기 차단 → 전문가 대기</span>
-                </button>
-              </div>
-            </div>
-
-            {/* 기존 알림 테스트 버튼 */}
-            <div className="mb-3">
-              <h4 className="text-md font-medium text-blue-700 mb-2">일반 알림 테스트</h4>
-              <div className="flex space-x-2">
-                <button 
-                  onClick={() => createTestAlert('danger')}
-                  className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm"
-                >
-                  위험 알림 생성
-                </button>
-                <button 
-                  onClick={() => createTestAlert('warning')}
-                  className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors text-sm"
-                >
-                  주의 알림 생성
-                </button>
-                <button 
-                  onClick={() => createTestAlert('info')}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
-                >
-                  정상화 알림 생성
-                </button>
-                <button 
-                  onClick={() => setAlertMessages([])}
-                  className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors text-sm"
-                >
-                  모든 알림 제거
-                </button>
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm text-gray-700">🔊 오디오 알림:</span>
-                  <button 
-                    onClick={() => setAudioEnabled(!audioEnabled)}
-                    className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                      audioEnabled 
-                        ? 'bg-green-600 text-white hover:bg-green-700' 
-                        : 'bg-gray-400 text-white hover:bg-gray-500'
-                    }`}
-                  >
-                    {audioEnabled ? '켜짐' : '꺼짐'}
-                  </button>
-                </div>
-                <button 
-                  onClick={() => playAlertSound('danger')}
-                  className="bg-purple-600 text-white px-3 py-1 rounded text-sm hover:bg-purple-700 transition-colors"
-                >
-                  🔊 소리 테스트
-                </button>
-              </div>
-              
-              {/* 비상 상황 기록 상태 */}
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-700">📊 비상 상황 기록:</span>
-                <button 
-                  onClick={() => window.open('/emergency', '_blank')}
-                  className="bg-indigo-600 text-white px-3 py-1 rounded text-sm hover:bg-indigo-700 transition-colors"
-                >
-                  관리 페이지 열기
-                </button>
-                <button 
-                  onClick={() => {
-                    // 모든 비상 상황 기록 삭제 (테스트용)
-                    if (confirm('모든 비상 상황 기록을 삭제하시겠습니까? (테스트용)')) {
-                      fetch('/api/emergency/incidents', { method: 'DELETE' })
-                        .then(() => {
-                          alert('비상 상황 기록이 삭제되었습니다.');
-                        })
-                        .catch(() => {
-                          alert('삭제에 실패했습니다.');
-                        });
-                    }
-                  }}
-                  className="bg-gray-500 text-white px-3 py-1 rounded text-sm hover:bg-gray-600 transition-colors"
-                >
-                  기록 초기화
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-
       {/* 알림 메시지 영역 */}
       {activeAlert && (
         <div className="bg-red-50 border-l-4 border-red-400 p-4 rounded-lg shadow-sm">
@@ -1334,162 +1188,6 @@ export default function Dashboard() {
         <div className="col-span-3 gap-6 space-y-4">
           {/* 상단 카드들 - 1:1:1:2 비율 */}
           
-          <div className="grid grid-cols-6 gap-6">
-            <div className="text-lg font-semibold col-span-3 text-gray-900">출근자 정보</div>
-            <div className="col-span-3 flex items-center">
-              <div className="text-lg font-semibold text-gray-900">비상상황 기록</div>
-              <div className="flex ml-4">
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={fetchEmergencyRecords}
-                    className="text-sm text-blue-600 hover:text-blue-800"
-                  >
-                    새로고침
-                  </button>
-                  <button 
-                    onClick={() => router.push('/emergency/records')}
-                    className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
-                  >
-                    <History className="w-4 h-4" />
-                    전체보기
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="grid grid-cols-6 gap-8">
-            {/* 출근 작업자 */}
-            <div className="bg-[#1E4E8B] text-white rounded-lg p-6">
-              <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <Users className="w-8 h-8 text-blue-200" />
-                  <p className="text-blue-100 text-sm">출근 작업자</p>
-                </div>
-                <div className="text-[35px] font-bold">{attendanceWorkers.length} <span className="text-[20px]">명</span></div>
-              </div>
-            </div>
-
-            {/* 안전모 정상 착용 */}
-            <div className="bg-white rounded-lg p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-600">안전모 착용</span>
-                <Bell className="w-[40px] h-[40px] text-white bg-[#34D399] rounded-full p-1" />
-              </div>
-              
-              
-              <div className="flex items-center justify-between space-x-2">
-                <span className="text-[35px] font-bold">{attendanceWorkers.length} <span className="text-[20px] text-gray-600">명</span></span>
-                {/* <div>
-                  <TrendingDown className="w-4 h-4 text-red-500" />
-                  <span className="text-sm text-red-500">7.5% 전일 대비 감소</span>
-                </div> */}
-              </div>
-            </div>
-
-            {/* 가스 누출 감지 */}
-            <div className="bg-white rounded-lg p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-600">안전모 미착용 감지</span>
-                <Bell className="w-[40px] h-[40px] text-white bg-[#F25959] rounded-full p-1" />
-              </div>
-              
-              <div className="flex items-center justify-between space-x-2">
-                <span className="text-[35px] font-bold">{gasSensorStats.critical + gasSensorStats.danger} <span className="text-[20px] text-gray-600">건</span></span>
-                {/* <div>
-                  <TrendingUp className="w-4 h-4 text-red-500" />
-                  <span className="text-sm text-red-500">
-                    {gasSensorStats.critical > 0 ? '치명적' : gasSensorStats.danger > 0 ? '위험' : '정상'}
-                  </span>
-                </div> */}
-              </div>
-            </div>
-
-            {/* 비상상황 기록 */}
-            <div className="col-span-3 bg-white rounded-lg p-6 shadow-sm">
-              <div className="max-h-48 overflow-y-auto space-y-3 pr-2">
-                {emergencyRecords.length > 0 ? (
-                  emergencyRecords.map((record, index) => {
-                    const isActive = record.status === 'active' || record.status === 'in_progress';
-                    const completedSteps = record.executions.filter(exec => exec.status === 'completed').length;
-                    const totalSteps = record.executions.length;
-                    
-                    return (
-                      <div 
-                        key={record.id || index} 
-                        className={`flex items-start space-x-3 p-3 rounded-lg transition-colors ${
-                          isActive 
-                            ? 'bg-gray-50 hover:bg-gray-100 cursor-pointer border-l-4 border-red-500' 
-                            : 'bg-gray-50'
-                        }`}
-                        onClick={isActive ? () => handleContinueEmergency(record) : undefined}
-                      >
-                        <div className="flex-shrink-0">
-                          <div className={`w-2 h-2 rounded-full mt-2 ${
-                            record.severity === 'critical' ? 'bg-purple-500' :
-                            record.severity === 'high' ? 'bg-red-500' :
-                            record.severity === 'medium' ? 'bg-yellow-500' :
-                            'bg-blue-500'
-                          }`}></div>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <h4 className={`text-sm font-medium truncate ${
-                              isActive ? 'text-red-900' : 'text-gray-900'
-                            }`}>
-                              {record.title}
-                              {isActive && (
-                                <span className="ml-2 text-xs text-red-600 font-normal">
-                                  (클릭하여 계속 진행)
-                                </span>
-                              )}
-                            </h4>
-                            <p className="text-xs text-gray-500 mt-1">
-                              {new Date(record.startedAt).toLocaleString('ko-KR')}
-                            </p>
-                            <span className="text-xs text-gray-500">
-                              완료: {completedSteps}/{totalSteps}단계
-                            </span>
-                            {!isActive && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  router.push(`/emergency/records/${record.id}`);
-                                }}
-                                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
-                              >
-                                <Eye className="w-3 h-3" />
-                                상세보기
-                              </button>
-                            )}
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                              record.status === 'active' ? 'bg-red-100 text-red-800' :
-                              record.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
-                              record.status === 'completed' ? 'bg-green-100 text-green-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
-                              {record.status === 'active' ? '진행중' :
-                               record.status === 'in_progress' ? '처리중' :
-                               record.status === 'completed' ? '완료' : '취소'}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between mt-2">
-                            
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <History className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                    <p>비상상황 기록이 없습니다.</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
           <div className="flex flex-col">
           {/* 실시간 CCTV */}
           <h3 className="text-lg font-semibold text-gray-900 mb-4">실시간 CCTV</h3>
@@ -1497,7 +1195,7 @@ export default function Dashboard() {
             <div className="grid grid-cols-3 gap-4 h-full">
               {/* A동 출입구 - RTSP 스트림 */}
               <div className="relative">
-                <div className="bg-gray-900 rounded-lg h-[260px] flex items-center justify-center relative overflow-hidden">
+                <div className="bg-gray-900 rounded-lg h-[360px] flex items-center justify-center relative overflow-hidden">
                   {isStreamLoading.cctv001 && (
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
                       <div className="text-white text-sm">스트림 로딩 중...</div>
@@ -1587,7 +1285,7 @@ export default function Dashboard() {
               
               {/* B동 출입구 - RTSP 스트림 */}
               <div className="relative">
-                <div className="bg-gray-900 rounded-lg h-[260px] flex items-center justify-center relative overflow-hidden">
+                <div className="bg-gray-900 rounded-lg h-[360px] flex items-center justify-center relative overflow-hidden">
                   {isStreamLoading.cctv002 && (
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
                       <div className="text-white text-sm">스트림 로딩 중...</div>
@@ -1671,7 +1369,7 @@ export default function Dashboard() {
                 
               {/* LPG 저장소 - RTSP 스트림 */}
               <div className="relative">
-                <div className="bg-gray-900 rounded-lg h-[260px] flex items-center justify-center relative overflow-hidden">
+                <div className="bg-gray-900 rounded-lg h-[360px] flex items-center justify-center relative overflow-hidden">
                   {isStreamLoading.cctv003 && (
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
                       <div className="text-white text-sm">스트림 로딩 중...</div>
