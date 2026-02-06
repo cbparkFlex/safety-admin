@@ -1235,48 +1235,8 @@ export default function Dashboard() {
                     />
                   )}
                 </div>
-                <div className="absolute top-2 left-2 bg-red-500 text-white text-xs px-2 py-1 rounded">
-                  UNSAFETY
-                </div>
-                <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded">
-                  SAFETY
-                </div>
                 <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
                   {cctvStreams.find(s => s.order === 1)?.name || 'A동 출입구'}
-                </div>
-                <div className="absolute top-2 left-2 flex space-x-1">
-                  <button
-                    onClick={() => toggleStreamPause('cctv001')}
-                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded"
-                    title={isStreamPaused.cctv001 ? '재개' : '일시정지'}
-                  >
-                    {isStreamPaused.cctv001 ? '▶️' : '⏸️'}
-                  </button>
-                  <button
-                    onClick={() => {
-                      // 기존 스트림 완전 정리
-                      cleanupStream('cctv001');
-                      // 상태 초기화
-                      setStreamError(prev => ({ ...prev, cctv001: null }));
-                      setIsStreamLoading(prev => ({ ...prev, cctv001: true }));
-                      setIsStreamPaused(prev => ({ ...prev, cctv001: false }));
-                      // 1초 후 재연결
-                      setTimeout(() => {
-                        initializeImageStream('cctv001');
-                      }, 1000);
-                    }}
-                    className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
-                    title="재연결"
-                  >
-                    🔄
-                  </button>
-                  <button
-                    onClick={() => cleanupStream('cctv001')}
-                    className="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
-                    title="정리"
-                  >
-                    🗑️
-                  </button>
                 </div>
                 <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
                   실시간 스트림
@@ -1328,40 +1288,6 @@ export default function Dashboard() {
                 <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
                   {cctvStreams.find(s => s.order === 2)?.name || 'B동 출입구'}
                 </div>
-                <div className="absolute top-2 left-2 flex space-x-1">
-                  <button
-                    onClick={() => toggleStreamPause('cctv002')}
-                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded"
-                    title={isStreamPaused.cctv002 ? '재개' : '일시정지'}
-                  >
-                    {isStreamPaused.cctv002 ? '▶️' : '⏸️'}
-                  </button>
-                  <button
-                    onClick={() => {
-                      // 기존 스트림 완전 정리
-                      cleanupStream('cctv002');
-                      // 상태 초기화
-                      setStreamError(prev => ({ ...prev, cctv002: null }));
-                      setIsStreamLoading(prev => ({ ...prev, cctv002: true }));
-                      setIsStreamPaused(prev => ({ ...prev, cctv002: false }));
-                      // 1초 후 재연결
-                      setTimeout(() => {
-                        initializeImageStream('cctv002');
-                      }, 1000);
-                    }}
-                    className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
-                    title="재연결"
-                  >
-                    🔄
-                  </button>
-                  <button
-                    onClick={() => cleanupStream('cctv002')}
-                    className="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
-                    title="정리"
-                  >
-                    🗑️
-                  </button>
-                </div>
                 <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
                   실시간 스트림
                 </div>
@@ -1411,40 +1337,6 @@ export default function Dashboard() {
                 </div>
                 <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
                   {cctvStreams.find(s => s.order === 3)?.name || 'LPG 저장소'}
-                </div>
-                <div className="absolute top-2 left-2 flex space-x-1">
-                  <button
-                    onClick={() => toggleStreamPause('cctv003')}
-                    className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded"
-                    title={isStreamPaused.cctv003 ? '재개' : '일시정지'}
-                  >
-                    {isStreamPaused.cctv003 ? '▶️' : '⏸️'}
-                  </button>
-                  <button
-                    onClick={() => {
-                      // 기존 스트림 완전 정리
-                      cleanupStream('cctv003');
-                      // 상태 초기화
-                      setStreamError(prev => ({ ...prev, cctv003: null }));
-                      setIsStreamLoading(prev => ({ ...prev, cctv003: true }));
-                      setIsStreamPaused(prev => ({ ...prev, cctv003: false }));
-                      // 1초 후 재연결
-                      setTimeout(() => {
-                        initializeImageStream('cctv003');
-                      }, 1000);
-                    }}
-                    className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
-                    title="재연결"
-                  >
-                    🔄
-                  </button>
-                  <button
-                    onClick={() => cleanupStream('cctv003')}
-                    className="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
-                    title="정리"
-                  >
-                    🗑️
-                  </button>
                 </div>
                 <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
                   실시간 스트림

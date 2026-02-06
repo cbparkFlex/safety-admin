@@ -158,17 +158,6 @@ export default function Header({
           <div className="text-gray-600">
             {formattedDate}
           </div>
-          <div className="flex items-center space-x-2 text-gray-600">
-            <span className="text-lg">
-              {weatherInfo ? weatherInfo.emoji : '🌤️'}
-            </span>
-            <span>
-              {weatherInfo ? `${weatherInfo.temperature}°C` : temperature}
-            </span>
-            <span className="text-sm text-gray-500">
-              {weatherInfo ? weatherInfo.description : '로딩 중...'}
-            </span>
-          </div>
         </div>
         
         <div className="flex items-center space-x-4">
